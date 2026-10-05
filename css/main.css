@@ -5,3 +5,25 @@ dialog{margin:auto;width:620px;max-width:calc(100vw - 40px);max-height:calc(100v
 
 /* Local illustrations and bounded game actors. Their poses follow session time. */
 body:not([data-mode]) main{display:flex;align-items:center;justify-content:center}.card[data-mode=free]{background:#edf4e6}.card[data-mode=mole]{background:#fbf0d8}.card[data-mode=phrase]{background:#eaf2f6}.card-art{width:150px;height:100%;max-height:150px;min-height:0;object-fit:contain}.card:hover{border-color:#6d9465;box-shadow:0 5px 0 #cbdaba}.mole-actor{position:relative;isolation:isolate;overflow:hidden;transform-origin:center bottom}.target-content .mole-actor{width:100%;height:48px}.mole-mask{position:absolute;inset:0 0 5px;overflow:hidden;z-index:1}.mole-body{position:absolute;left:0;right:0;margin:auto;bottom:0;height:80%;width:auto;max-width:100%;object-fit:contain;transform-origin:center bottom;will-change:transform,opacity}.target-content .mole-body{width:60px;height:36px;object-fit:fill}.hole .mole-actor{width:clamp(130px,18vh,170px);max-width:100%;height:100%;min-height:0}.mole-actor:before{content:"";position:absolute;bottom:0;left:7%;width:86%;height:12px;background:#60412d;border-radius:50%;z-index:0}.mole-rim{position:absolute;bottom:0;left:7%;width:86%;height:7px;border-bottom:4px solid #a17b50;border-radius:0 0 50% 50%;z-index:2}.mole-hammer{position:absolute;right:0;top:0;width:32px;height:32px;object-fit:contain;transform-origin:80% 90%;opacity:0;z-index:3}.mole-stars{position:absolute;left:0;right:0;top:8%;text-align:center;font-size:24px;font-weight:800;color:#936210;text-shadow:0 1px #fff;opacity:0;z-index:3;white-space:nowrap}.mole-plus{position:absolute;right:1px;top:35%;font:bold 22px/1 Menlo,monospace;color:#245c39;background:#fff8cf;border-radius:8px;padding:1px 3px;opacity:0;z-index:4}.hole .mole-stars{font-size:38px}.hole .mole-plus{font-size:32px}.hole .mole-hammer{width:64px;height:65px}body[data-size=large]{--normal-target:92px}body[data-size=huge]{--normal-target:104px}
+
+/* A persistent, explicit learning sequence for the mole game. */
+body[data-mode=mole] #play{grid-template-rows:46px 80px 28px minmax(0,1fr) 28px;gap:5px}
+#mole-difficulty{min-width:0;display:grid;grid-template-rows:22px minmax(0,1fr);gap:4px}
+.difficulty-heading{display:flex;align-items:center;gap:18px;font-size:18px;line-height:22px}
+#difficulty-note{color:#4c6251}
+#difficulty-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:20px;position:relative;min-width:0}
+#difficulty-options:before{content:"";position:absolute;left:20px;right:20px;top:50%;height:2px;background:#8a9e77}
+.difficulty-option{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:24px 20px;align-content:center;gap:1px 4px;border:2px solid #b7c9a8;border-radius:12px;padding:3px 8px;min-width:0;background:#fffef9;white-space:nowrap;text-align:left}
+.difficulty-option:not(:last-child):after{content:"→";position:absolute;right:-19px;top:50%;transform:translateY(-50%);color:#476940;font-size:20px}
+.difficulty-name{grid-column:1/-1;font-size:18px;font-weight:750;line-height:24px}
+.difficulty-example{font:700 18px/20px Menlo,Consolas,monospace;color:#516249}
+.difficulty-selected{font-size:18px;font-weight:750;line-height:20px;color:#593b11}
+.difficulty-option[aria-checked=true]{background:#ffe090;border:3px solid #705022;padding:2px 7px;box-shadow:0 0 0 1px #fff5d2}
+.difficulty-option:hover,.difficulty-option:focus-visible{border-color:#705022}
+.difficulty-option[aria-disabled=true]{cursor:default}
+body[data-mode=mole] #keyboard{padding:7px;gap:4px;grid-template-rows:repeat(4,minmax(0,1fr)) minmax(0,.55fr)}
+body[data-mode=mole] .key-row{gap:4px}
+body[data-mode=mole] .target-content{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr) 18px;gap:0}
+body[data-mode=mole] .target-content .mole-letter{grid-column:1;grid-row:1;justify-self:center}
+body[data-mode=mole] .target-content .mole-actor{grid-column:2;grid-row:1;width:100%;height:min(48px,100%);align-self:center}
+body[data-mode=mole] .target-content .finger-label{grid-column:1/-1;grid-row:2}

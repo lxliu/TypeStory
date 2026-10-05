@@ -43,3 +43,14 @@ cueGame.resume(9000);cueGame.tick(9070);assert.deepEqual(cueGame.takeMoleCues(),
 cueGame.tick(9429);assert.equal(cueGame.takeNextMole(),false);cueGame.tick(9500);assert.equal(cueGame.takeNextMole(),true);
 const stopped=new C.Session('mole','a',0);stopped.input('a',0);stopped.end(80);assert.deepEqual(stopped.takeMoleCues(),[]);
 console.log('PASS: 650ms hit duration, contact/bounce cue timing, pause and stop cancellation');
+
+// Mole preference survives storage/JSON, independently of phrase progress.
+for(let stage=0;stage<L.stages.length;stage++){
+ const saved=C.defaults();saved.settings.moleStage=stage;saved.progress.stage=2;
+ const loaded=C.validate(JSON.parse(JSON.stringify(saved)));
+ assert.equal(loaded.settings.moleStage,stage);assert.equal(loaded.progress.stage,2);
+ C.resetProgress(loaded.progress);assert.equal(loaded.settings.moleStage,stage);
+}
+const oldBackup=C.defaults();delete oldBackup.settings.moleStage;assert.equal(C.validate(oldBackup).settings.moleStage,0);
+for(const value of [-1,6,1.5,'2',null])assert.throws(()=>C.validate({...C.defaults(),settings:{...C.defaults().settings,moleStage:value}}));
+console.log('PASS: remembered mole difficulty, JSON round trip, legacy fallback, bounds and reset independence');

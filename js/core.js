@@ -1,12 +1,13 @@
 (function(root){
 const MOLE_TIMING={duration:650,contact:100,bounce:220,retreat:400,hidden:580};
-const defaults=()=>({version:1,settings:{layout:'mac',size:'standard',volume:45,mute:false,musicEnabled:true,musicVolume:20},progress:{stage:0,help:true,current:null,completed:{},best:{},last:{}}});
+const defaults=()=>({version:1,settings:{layout:'mac',size:'standard',volume:45,mute:false,musicEnabled:true,musicVolume:20,moleStage:0},progress:{stage:0,help:true,current:null,completed:{},best:{},last:{}}});
 function validate(data){
  if(!data||data.version!==1||!data.settings||!data.progress)throw Error('不是有效的 TypeStory 进度文件');
  const s=data.settings,p=data.progress;
  if(!['mac','windows'].includes(s.layout)||!['standard','large','huge'].includes(s.size)||!Number.isFinite(s.volume)||s.volume<0||s.volume>100||typeof s.mute!=='boolean'||!Number.isInteger(p.stage)||p.stage<0||p.stage>=TSLessons.phrases.length||typeof p.help!=='boolean')throw Error('设置或阶段无效');
  if(s.musicEnabled!==undefined&&typeof s.musicEnabled!=='boolean'||s.musicVolume!==undefined&&(!Number.isFinite(s.musicVolume)||s.musicVolume<0||s.musicVolume>100))throw Error('音乐设置无效');
- const result=defaults();result.settings={layout:s.layout,size:s.size,volume:s.volume,mute:s.mute,musicEnabled:s.musicEnabled===undefined?true:s.musicEnabled,musicVolume:s.musicVolume===undefined?20:s.musicVolume};result.progress.stage=p.stage;result.progress.help=p.help;
+ if(s.moleStage!==undefined&&(!Number.isInteger(s.moleStage)||s.moleStage<0||s.moleStage>=TSLessons.stages.length))throw Error('地鼠难度无效');
+ const result=defaults();result.settings={layout:s.layout,size:s.size,volume:s.volume,mute:s.mute,musicEnabled:s.musicEnabled===undefined?true:s.musicEnabled,musicVolume:s.musicVolume===undefined?20:s.musicVolume,moleStage:s.moleStage===undefined?0:s.moleStage};result.progress.stage=p.stage;result.progress.help=p.help;
  function validId(id){const m=/^(\d+):(\d+)$/.exec(id);return m&&TSLessons.phrases[+m[1]]&&TSLessons.phrases[+m[1]].texts[+m[2]]!==undefined;}
  if(p.current!==null&&!validId(p.current))throw Error('当前题目无效');result.progress.current=p.current;
  for(const map of ['completed','best','last'])if(!p[map]||typeof p[map]!=='object'||Array.isArray(p[map]))throw Error('进度格式无效');
