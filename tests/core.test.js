@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+require('../js/keyboard.js');require('../js/lessons.js');require('../js/core.js');
+const C=TSCore,K=TSKeyboard,L=TSLessons;
+for(const s of L.stages)for(const char of s.chars)assert.ok(K.find(char),char);
+for(const stage of L.phrases)for(const text of stage.texts)for(const char of text)assert.ok(K.find(char),char);
+assert.equal(K.guidance('A').shiftCode,'ShiftRight');assert.equal(K.guidance('{').shiftCode,'ShiftLeft');assert.equal(K.guidance('A').shift,true);assert.equal(K.guidance(' ').key.code,'Space');
+let game=new C.Session('mole','a',0);assert.equal(game.input('b',100),'wrong');assert.equal(game.target,'a');assert.equal(game.correct,0);assert.equal(game.input('a',200),'correct');assert.equal(game.accuracy,50);assert.ok(game.hint());assert.equal(game.hint(),false);game.pause(1000);game.tick(5000);assert.equal(game.elapsed,1000);game.resume(5000);game.tick(64000);assert.equal(game.active,false);assert.equal(game.input('a',64001),'ignored');assert.equal(game.correct,1);
+game=new C.Session('phrase','a A',0);assert.equal(game.input('x',1),'wrong');assert.equal(game.index,0);assert.equal(game.input('a',2),'correct');assert.equal(game.input(' ',3),'correct');assert.equal(game.input('A',4),'complete');assert.equal(game.input('A',5),'ignored');assert.equal(game.correct,3);
+let data=C.defaults();data.progress.current='0:2';assert.equal(C.pickPhrase(data.progress,0),'0:2');data.progress.current=null;data.progress.completed['0:0']=true;assert.notEqual(C.pickPhrase(data.progress,0,()=>0),'0:0');L.phrases[0].texts.forEach((_,i)=>data.progress.completed['0:'+i]=true);data.progress.last[0]='0:0';assert.notEqual(C.pickPhrase(data.progress,0,()=>0),'0:0');assert.deepEqual(C.validate(JSON.parse(JSON.stringify(data))),data);assert.throws(()=>C.validate({...data,version:2}));assert.throws(()=>C.validate({...data,progress:{...data.progress,current:'99:2'}}));assert.throws(()=>C.validate({...data,settings:{...data.settings,volume:-1}}));
+data.progress.current='0:0';assert.equal(C.pickPhrase(data.progress,0),'0:0');
+console.log('PASS: character mappings, Shift guidance, score/timing/pause, phrase correction/completion, progress cycles and import validation');
