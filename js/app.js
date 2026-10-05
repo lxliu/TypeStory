@@ -6,7 +6,7 @@
  function storageWarning(){storageOK=false;$('storage-warning').hidden=false;$('storage-warning').textContent='此浏览器暂时无法自动保存进度。仍然可以练习，请在设置中导出备份。';}
  try{localStorage.setItem(storageKey+'.probe','1');localStorage.removeItem(storageKey+'.probe');const saved=localStorage.getItem(storageKey);if(saved)data=C.validate(JSON.parse(saved));}catch(_){storageWarning();}
  function save(){try{localStorage.setItem(storageKey,JSON.stringify(data));if(!storageOK){storageOK=true;$('storage-warning').hidden=true;}}catch(_){storageWarning();}}
- function syncMusic(){if(mode==='mole'&&session&&session.active&&!session.paused){TSAudio.startMusic(data.settings);if(session.moleEffect?.kind==='hit')TSAudio.duckMusic((1-session.hitProgress)*.45);}else TSAudio.pauseMusic();}
+ function syncMusic(){if(mode==='mole'&&session&&session.active&&!session.paused){TSAudio.startMusic(data.settings);if(session.moleEffect?.kind==='hit')TSAudio.duckMusic((1-session.hitProgress)*C.MOLE_TIMING.duration/1000);}else TSAudio.pauseMusic();}
  function sound(kind){TSAudio.play(kind,data.settings);}
  function textChar(c){return c===' '?'空格':c;}
  function selectedStage(){return Number($('stage').value)||0;}
@@ -47,7 +47,7 @@
   const hammer=document.createElement('img');hammer.className='mole-hammer';hammer.src='assets/images/hammer.svg';hammer.alt='';
   const stars=document.createElement('span');stars.className='mole-stars';stars.textContent='✦ ✧';stars.setAttribute('aria-hidden','true');
   const plus=document.createElement('span');plus.className='mole-plus';plus.textContent='+1';plus.setAttribute('aria-hidden','true');
-  actor.append(image,hammer,stars,plus);return actor;
+  const mask=document.createElement('div');mask.className='mole-mask';mask.append(image);const rim=document.createElement('div');rim.className='mole-rim';actor.append(mask,rim,hammer,stars,plus);return actor;
  }
  function renderHoles(){
   const visible=mode==='mole'&&!$('help').checked;$('holes').hidden=!visible;$('holes').replaceChildren();if(!visible)return;
@@ -56,21 +56,23 @@
  const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
  function paintMoleEffect(){
   if(mode!=='mole')return;
-  const effect=session?.moleEffect,age=effect?session.elapsed-effect.start:0;
+  const effect=session?.moleEffect,age=effect?session.elapsed-effect.start:0,T=C.MOLE_TIMING;
   for(const actor of document.querySelectorAll('.mole-actor')){
    const body=actor.querySelector('.mole-body'),hammer=actor.querySelector('.mole-hammer'),stars=actor.querySelector('.mole-stars'),plus=actor.querySelector('.mole-plus');
    body.style.transform='none';body.style.opacity='1';hammer.style.opacity='0';stars.style.opacity='0';plus.style.opacity='0';
+   const struck=effect&&(effect.kind==='wrong'||age>=T.contact);
+   const src='assets/images/'+(struck?'mole-hit.svg':'mole-bust.svg');if(body.getAttribute('src')!==src)body.src=src;
+   body.alt=struck?'打中了，地鼠正在跑回洞里':'等待输入的地鼠';
    if(!effect||!session.active)continue;
-   if(effect.kind==='wrong'){if(age<300&&!reducedMotion.matches)body.style.transform='rotate('+Math.sin(age/300*Math.PI*4)*9+'deg)';continue;}
+   if(effect.kind==='wrong'){if(age<350&&!reducedMotion.matches)body.style.transform='translateX('+Math.sin(age/350*Math.PI*4)*8+'%) rotate('+Math.sin(age/350*Math.PI*4)*8+'deg)';if(age>=350)body.src='assets/images/mole-bust.svg';continue;}
    const p=session.hitProgress;
-   stars.style.opacity=p>.12&&p<.85?'1':'0';plus.style.opacity=p>.15?'1':'0';
-   body.alt='打中了，地鼠正在跑回洞里';
-   if(reducedMotion.matches){body.style.opacity=p>.75?'0':'1';continue;}
-   hammer.style.opacity=p<.42?'1':'0';hammer.style.transform='rotate('+(-45+Math.sin(Math.min(1,p/.3)*Math.PI)*80)+'deg)';
-   if(p<.25)body.style.transform='scale('+(1+.18*Math.sin(p/.25*Math.PI))+','+(1-.3*Math.sin(p/.25*Math.PI))+')';
-   else if(p<.6)body.style.transform='translateY('+(-14*Math.sin((p-.25)/.35*Math.PI))+'%)';
-   else {body.style.transform='translateY('+((p-.6)/.4*85)+'%) scale('+(1-(p-.6)/.4*.65)+')';body.style.opacity=String(1-(p-.6)/.4);}
-   stars.style.transform='scale('+(1+p*.3)+')';plus.style.transform='translateY('+(-p*16)+'px)';
+   stars.style.opacity=age>=T.contact&&age<T.hidden?'1':'0';plus.style.opacity=age>=T.contact?'1':'0';
+   stars.style.transform='translateY('+(-p*8)+'px) scale('+(1+p*.5)+')';plus.style.transform='translateY('+(-p*12)+'px)';
+   if(reducedMotion.matches){body.style.opacity=age>=T.hidden?'0':'1';continue;}
+   hammer.style.opacity=age<T.bounce?'1':'0';hammer.style.transform='rotate('+(age<T.contact?-65+95*age/T.contact:30-20*(age-T.contact)/(T.bounce-T.contact))+'deg)';
+   if(age>=T.contact&&age<T.bounce){const q=(age-T.contact)/(T.bounce-T.contact);body.style.transform='scale('+(1+.32*Math.sin(q*Math.PI))+','+(1-.42*Math.sin(q*Math.PI))+')';}
+   else if(age>=T.bounce&&age<T.retreat){const q=(age-T.bounce)/(T.retreat-T.bounce);body.style.transform='translateY('+(-(actor.closest('.key')?16:22)*Math.sin(q*Math.PI))+'%) rotate('+(-12*Math.sin(q*Math.PI))+'deg)';}
+   else if(age>=T.retreat){const q=Math.min(1,(age-T.retreat)/(T.hidden-T.retreat));body.style.transform='translateY('+(q*115)+'%)';if(age>=T.hidden)body.style.opacity='0';}
   }
  }
  function updateStats(){const stage=selectedStage();$('stage-progress').hidden=mode!=='phrase';if(mode==='phrase'){const p=C.stageProgress(data.progress,stage);$('stage-progress').textContent='本阶段已完成 '+p.completed+'/'+p.total;}if(!session){$('score').textContent='准备开始';$('time').textContent='';$('accuracy').textContent='';$('progress').textContent='';return;}$('score').textContent=mode==='mole'?'⭐ '+session.correct+' 分':'✓ '+session.correct+' 次正确';$('time').textContent=mode==='mole'?'⏱ 剩余 '+Math.ceil((60000-session.elapsed)/1000)+' 秒':'⏱ '+Math.floor(session.elapsed/1000)+' 秒';$('accuracy').textContent='准确率 '+session.accuracy+'%';$('progress').textContent=mode==='phrase'?'进度 '+session.index+'/'+session.target.length+' · 求助 '+session.hints+' 次':'求助 '+session.hints+' 次';}
@@ -100,7 +102,7 @@
    sound('wrong');if(mode==='phrase')flash($('phrase-board').querySelector('.current'),'wrong-feedback');
    $('message').textContent=caps&&/[a-z]/.test(expected)&&e.key===expected.toUpperCase()?'当前开启了大写锁定，按 Caps Lock 关闭再试试。':'再试一次，目标是 '+textChar(expected)+'。';
   }else{
-   sound(mode==='mole'?'mole-hit':'correct');$('message').textContent=mode==='mole'?'打中了！+1':'找到了！继续加油。';
+   if(mode==='mole')TSAudio.duckMusic(C.MOLE_TIMING.duration/1000);else sound('correct');$('message').textContent=mode==='mole'?'打中了！+1':'找到了！继续加油。';
    if(outcome==='complete'){finish();return;}
    if(mode==='phrase'){session.hinted=false;renderTarget();}
   }
@@ -112,7 +114,7 @@
   if(session&&session.active&&!session.paused){
    session.tick(now);
    if(!session.active)finish();
-   else if(mode==='mole'&&session.takeNextMole()){newMole();renderTarget();}
+   else if(mode==='mole'){for(const cue of session.takeMoleCues())sound(cue);if(session.takeNextMole()){newMole();renderTarget();}}
    updateStats();
   }
   paintMoleEffect();requestAnimationFrame(frame);

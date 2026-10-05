@@ -16,11 +16,10 @@
   play(kind,s){
    if(s.mute||!this.context)return;
    const volume=s.volume/100;
-   if(kind==='mole-hit'){
-    this.duckMusic(.45);
-    this.note(480,volume*.17,.11,'effect',0,140);
-    this.note(660,volume*.085,.15,'effect',.09,880);
-    this.note(990,volume*.06,.18,'effect',.19);
+   if(kind==='mole-contact'){
+    this.duckMusic(.55);this.note(560,volume*.22,.12,'effect',0,120);
+   }else if(kind==='mole-bounce'){
+    this.note(660,volume*.11,.17,'effect',0,1100);this.note(1100,volume*.075,.15,'effect');
    }else if(kind==='complete'){
     [440,554,659].forEach((f,i)=>this.note(f,volume*.07,.2,'effect',i*.09));
    }else if(kind==='wrong')this.note(270,volume*.07,.14,'effect',0,210);

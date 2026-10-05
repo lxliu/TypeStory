@@ -12,6 +12,6 @@ global.setInterval=originalSet;global.clearInterval=originalClear;
 console.log('PASS: music start idempotency, pause/resume, mute, disabled, zero volume, stop/restart');
 // Ducking affects only the music gain; the pop/glissando use the effect bus.
 let calls=[],duck=[];a.context={currentTime:10};a.musicBus={gain:{cancelScheduledValues:t=>duck.push(['cancel',t]),setValueAtTime:(v,t)=>duck.push(['set',v,t]),linearRampToValueAtTime:(v,t)=>duck.push(['ramp',v,t])}};
-a.note=(...args)=>calls.push(args);a.play('mole-hit',{volume:50,mute:false});assert.equal(calls.length,3);assert.ok(calls.every(n=>n[3]==='effect'));assert.ok(duck.some(n=>n[0]==='set'&&n[1]===.28));assert.ok(duck.some(n=>n[0]==='ramp'&&n[1]===1));calls=[];a.play('mole-hit',{volume:50,mute:true});assert.equal(calls.length,0);
+a.note=(...args)=>calls.push(args);a.play('mole-contact',{volume:50,mute:false});a.play('mole-bounce',{volume:50,mute:false});assert.equal(calls.length,3);assert.ok(calls.every(n=>n[3]==='effect'));assert.ok(duck.some(n=>n[0]==='set'&&n[1]===.28));assert.ok(duck.some(n=>n[0]==='ramp'&&n[1]===1));calls=[];a.play('mole-contact',{volume:50,mute:true});a.play('mole-bounce',{volume:50,mute:true});assert.equal(calls.length,0);
 a.play('key',{volume:50,mute:false});assert.equal(calls.length,1);assert.equal(calls[0][3],'effect');
 console.log('PASS: independent hit/music routing, music duck envelope, silent mode and keyboard click');

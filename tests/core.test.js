@@ -27,9 +27,19 @@ game=new C.Session('mole','a',0);
 assert.equal(game.input('a',100),'correct');assert.equal(game.target,'a');assert.equal(game.moleEffect.kind,'hit');
 assert.equal(game.input('a',150),'ignored');assert.equal(game.input('x',200),'ignored');assert.equal(game.correct,1);assert.equal(game.errors,0);
 game.pause(250);const frozen=game.hitProgress;game.tick(5000);assert.equal(game.hitProgress,frozen);assert.equal(game.takeNextMole(),false);
-game.resume(5000);game.tick(5299);assert.equal(game.takeNextMole(),false);game.tick(5300);assert.equal(game.takeNextMole(),true);assert.equal(game.takeNextMole(),false);
-game.target='b';assert.equal(game.input('x',5400),'wrong');assert.equal(game.target,'b');assert.equal(game.moleEffect.kind,'wrong');assert.equal(game.input('b',5450),'correct');assert.equal(game.correct,2);
-game.end(5500);assert.equal(game.moleEffect,null);assert.equal(game.takeNextMole(),false);
+game.resume(5000);game.tick(5499);assert.equal(game.takeNextMole(),false);game.tick(5500);assert.equal(game.takeNextMole(),true);assert.equal(game.takeNextMole(),false);
+game.target='b';assert.equal(game.input('x',5600),'wrong');assert.equal(game.target,'b');assert.equal(game.moleEffect.kind,'wrong');assert.equal(game.input('b',5650),'correct');assert.equal(game.correct,2);
+game.end(5700);assert.equal(game.moleEffect,null);assert.equal(game.takeNextMole(),false);
 game=new C.Session('mole','a',0);game.input('a',59900);game.tick(60000);assert.equal(game.active,false);assert.equal(game.takeNextMole(),false);assert.equal(game.moleEffect,null);
 const fresh=new C.Session('mole','z',70000);assert.equal(fresh.moleEffect,null);assert.equal(fresh.correct,0);
 console.log('PASS: old-target hit lifecycle, input lock, pause/resume frame time, wrong recovery, timeout and restart cleanup');
+
+// Contact and bounce cues follow active time and fire once, even after help re-render.
+const cueGame=new C.Session('mole','a',0);cueGame.input('a',0);
+cueGame.tick(99);assert.deepEqual(cueGame.takeMoleCues(),[]);
+cueGame.tick(100);assert.deepEqual(cueGame.takeMoleCues(),['mole-contact']);assert.deepEqual(cueGame.takeMoleCues(),[]);
+cueGame.pause(150);cueGame.tick(9000);assert.deepEqual(cueGame.takeMoleCues(),[]);
+cueGame.resume(9000);cueGame.tick(9070);assert.deepEqual(cueGame.takeMoleCues(),['mole-bounce']);assert.deepEqual(cueGame.takeMoleCues(),[]);
+cueGame.tick(9429);assert.equal(cueGame.takeNextMole(),false);cueGame.tick(9500);assert.equal(cueGame.takeNextMole(),true);
+const stopped=new C.Session('mole','a',0);stopped.input('a',0);stopped.end(80);assert.deepEqual(stopped.takeMoleCues(),[]);
+console.log('PASS: 650ms hit duration, contact/bounce cue timing, pause and stop cancellation');

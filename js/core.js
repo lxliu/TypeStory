@@ -1,4 +1,5 @@
 (function(root){
+const MOLE_TIMING={duration:650,contact:100,bounce:220,retreat:400,hidden:580};
 const defaults=()=>({version:1,settings:{layout:'mac',size:'standard',volume:45,mute:false,musicEnabled:true,musicVolume:20},progress:{stage:0,help:true,current:null,completed:{},best:{},last:{}}});
 function validate(data){
  if(!data||data.version!==1||!data.settings||!data.progress)throw Error('不是有效的 TypeStory 进度文件');
@@ -28,12 +29,13 @@ class Session{
  pause(now){this.tick(now);if(this.active)this.paused=true;}
  resume(now){if(this.active){this.paused=false;this.since=now;}}
  end(now){this.tick(now);this.active=false;this.moleEffect=null;}
- get hitProgress(){return this.moleEffect&&this.moleEffect.kind==='hit'?Math.min(1,(this.elapsed-this.moleEffect.start)/450):0;}
+ get hitProgress(){return this.moleEffect&&this.moleEffect.kind==='hit'?Math.min(1,(this.elapsed-this.moleEffect.start)/MOLE_TIMING.duration):0;}
+ takeMoleCues(){if(!this.active||this.paused||this.moleEffect?.kind!=='hit')return [];const effect=this.moleEffect,age=this.elapsed-effect.start;return [['mole-contact',MOLE_TIMING.contact],['mole-bounce',MOLE_TIMING.bounce]].filter(([name,time])=>{if(age<time||effect.cues.includes(name))return false;effect.cues.push(name);return true;}).map(([name])=>name);}
  takeNextMole(){if(!this.active||this.paused||!this.moleEffect||this.moleEffect.kind!=='hit'||this.hitProgress<1)return false;this.moleEffect=null;return true;}
  get expected(){return this.mode==='phrase'?this.target[this.index]:this.target;}
  get accuracy(){return this.correct+this.errors?Math.round(this.correct/(this.correct+this.errors)*100):100;}
- input(char,now){this.tick(now);if(!this.active||this.paused||this.mode==='mole'&&this.moleEffect?.kind==='hit')return 'ignored';if(char!==this.expected){if(this.mode==='mole')this.moleEffect={kind:'wrong',start:this.elapsed};this.errors++;this.mistakes[this.expected]=(this.mistakes[this.expected]||0)+1;return 'wrong';}this.correct++;if(this.mode==='mole')this.moleEffect={kind:'hit',start:this.elapsed};if(this.mode==='phrase'){this.index++;if(this.index===this.target.length){this.active=false;return 'complete';}}return 'correct';}
+ input(char,now){this.tick(now);if(!this.active||this.paused||this.mode==='mole'&&this.moleEffect?.kind==='hit')return 'ignored';if(char!==this.expected){if(this.mode==='mole')this.moleEffect={kind:'wrong',start:this.elapsed};this.errors++;this.mistakes[this.expected]=(this.mistakes[this.expected]||0)+1;return 'wrong';}this.correct++;if(this.mode==='mole')this.moleEffect={kind:'hit',start:this.elapsed,cues:[]};if(this.mode==='phrase'){this.index++;if(this.index===this.target.length){this.active=false;return 'complete';}}return 'correct';}
  hint(){if(this.active&&!this.paused&&!this.hinted){this.hints++;this.hinted=true;return true;}return false;}
 }
-root.TSCore={defaults,validate,pickPhrase,stageProgress,resetProgress,Session};
+root.TSCore={MOLE_TIMING,defaults,validate,pickPhrase,stageProgress,resetProgress,Session};
 })(typeof window==='undefined'?globalThis:window);
