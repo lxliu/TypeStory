@@ -1,6 +1,7 @@
 (() => {
  'use strict';
  const $=id=>document.getElementById(id),C=TSCore,K=TSKeyboard,L=TSLessons,A=TSAudio;
+ const HOLE_COUNT=3;
  const storageKey='typestory.v2',pressedCodes=new Set(),reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
  let data=C.defaults(),session=null,finished=false,shift=false,caps=false,hole=0,storageOK=true,pendingScore=null,confirmation=null,boardStage=0,boardHelp=true,newRecordId=null;
  function storageWarning(){storageOK=false;$('storage-warning').hidden=false;}
@@ -47,7 +48,19 @@
  function renderTarget(){
   document.querySelectorAll('.target,.shift-target').forEach(el=>el.classList.remove('target','shift-target'));document.querySelectorAll('.target-content,.shift-instruction').forEach(el=>el.remove());
   $('keyboard-area').hidden=!data.settings.help;$('holes').hidden=data.settings.help;$('holes').replaceChildren();
-  if(!data.settings.help){for(let i=0;i<9;i++){const el=document.createElement('div');el.className='hole';const burrow=document.createElement('div');burrow.className='hole-burrow';const ground=document.createElement('img');ground.className='hole-ground';ground.src='assets/images/hole.svg';ground.alt='';burrow.append(ground);if(running()&&i===hole){el.classList.add('occupied');const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;const front=document.createElement('img');front.className='hole-front';front.src='assets/images/hole-front.svg';front.alt='';burrow.append(makeMole(),front);el.append(letter);}el.append(burrow);$('holes').append(el);}}
+  if(!data.settings.help){
+   for(let i=0;i<HOLE_COUNT;i++){
+    const el=document.createElement('div');el.className='hole';el.dataset.position=i;
+    const sign=document.createElement('div');sign.className='hole-sign';
+    const burrow=document.createElement('div');burrow.className='hole-burrow';
+    const ground=document.createElement('img');ground.className='hole-ground';ground.src='assets/images/hole.svg';ground.alt='';burrow.append(ground);
+    if(running()&&i===hole){
+     el.classList.add('occupied');const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;sign.append(letter);
+     const front=document.createElement('img');front.className='hole-front';front.src='assets/images/hole-front.svg';front.alt='';burrow.append(makeMole(),front);
+    }
+    el.append(sign,burrow);$('holes').append(el);
+   }
+  }
   else if(running()){
    const g=K.guidance(session.target),key=keyEl(g.key.code),content=document.createElement('div');key.classList.add('target');content.className='target-content';
    const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;const finger=document.createElement('span');finger.className='finger-label';finger.textContent=g.label;content.append(letter,makeMole(),finger);key.append(content);
@@ -83,7 +96,7 @@
    else if(age>=T.retreat){const q=Math.min(1,(age-T.retreat)/(T.hidden-T.retreat));body.style.transform='translateY('+(q*115)+'%)';if(age>=T.hidden)body.style.opacity='0';}
   }
  }
- function start(){if(openDialog()||running()||window.innerWidth<1280||window.innerHeight<700)return;A.stopMusic();A.enable();finished=false;pendingScore=null;session=new C.Session(data.settings.stage,data.settings.help,performance.now());hole=Math.floor(Math.random()*9);renderControls();renderTarget();message('找到字符，把地鼠送回家。');syncMusic();}
+ function start(){if(openDialog()||running()||window.innerWidth<1280||window.innerHeight<700)return;A.stopMusic();A.enable();finished=false;pendingScore=null;session=new C.Session(data.settings.stage,data.settings.help,performance.now());hole=Math.floor(Math.random()*HOLE_COUNT);renderControls();renderTarget();message('找到字符，把地鼠送回家。');syncMusic();}
  function pause(){if(!running())return false;if(!session.paused){session.pause(performance.now());A.silence('effect');A.pauseMusic();if(!session.active){finish();return false;}renderControls();message('已暂停，按 Enter 继续。');}return true;}
  function resume(){if(!running()||!session.paused||openDialog())return;session.resume(performance.now());A.enable();renderControls();message('找到字符，把地鼠送回家。');syncMusic();}
  function finish(){
@@ -144,6 +157,6 @@
  window.addEventListener('keyup',e=>{pressedCodes.delete(e.code);syncModifiers(e);keyEl(e.code)?.classList.remove('pressed');});
  function loseFocus(){pause();clearPressedKeys();}
  window.addEventListener('blur',loseFocus);document.addEventListener('visibilitychange',()=>{if(document.hidden)loseFocus();});window.addEventListener('resize',()=>{if(window.innerWidth<1280||window.innerHeight<700)pause();});
- function frame(now){if(running()&&!session.paused){session.tick(now);if(!session.active)finish();else{for(const cue of session.takeMoleCues())sound(cue);if(session.takeNextMole()){hole=Math.floor(Math.random()*9);renderTarget();}}updateStats();}paintMoleEffect();requestAnimationFrame(frame);}
+ function frame(now){if(running()&&!session.paused){session.tick(now);if(!session.active)finish();else{for(const cue of session.takeMoleCues())sound(cue);if(session.takeNextMole()){hole=Math.floor(Math.random()*HOLE_COUNT);renderTarget();}}updateStats();}paintMoleEffect();requestAnimationFrame(frame);}
  applySettings();renderControls();requestAnimationFrame(frame);
 })();

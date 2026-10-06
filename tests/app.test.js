@@ -13,7 +13,7 @@ class Element{
  addEventListener(name,fn){(this.handlers[name]??=[]).push(fn);}dispatch(name,event={}){const e={target:this,preventDefault(){this.prevented=true;},stopPropagation(){},...event};this['on'+name]?.(e);for(const fn of this.handlers[name]||[])fn(e);return e;}
  click(){if(!this.disabled)this.dispatch('click');}focus(){this.doc.activeElement=this;}select(){}remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(c=>c!==this);}showModal(){assert.ok(!this.doc.querySelector('dialog[open]'),'no stacked modals');this.open=true;this.shows=(this.shows||0)+1;}close(){this.open=false;}
 }
-function boot(saved={},failStorage=false){
+function boot(saved={},failStorage=false,random=Math.random){
  const document=new Element('document');document.doc=document;document.createElement=tag=>new Element(tag,document);document.getElementById=id=>document.querySelector('#'+id);document.hasFocus=()=>true;document.hidden=false;document.addEventListener=Element.prototype.addEventListener;
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),stack=[document];
  for(const token of html.match(/<[^>]+>|[^<]+/g)){
@@ -22,7 +22,7 @@ function boot(saved={},failStorage=false){
   }else stack.at(-1)._text+=token;
  }
  document.body=document.querySelector('body');const storage=new Map(Object.entries(saved)),events={},audio=[];let now=0,nextFrame;
- const context={document,console,Math,Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:1280,innerHeight:700,matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>events[name]=fn,requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
+ const context={document,console,Math:Object.assign(Object.create(Math),{random}),Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:1280,innerHeight:700,matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>events[name]=fn,requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
  for(const file of ['keyboard','lessons','core','app'])vm.runInContext(fs.readFileSync(path.join(root,'js',file+'.js'),'utf8'),context,{filename:file+'.js'});
  const $=id=>document.getElementById(id);
  const key=(key,extra={})=>events.keydown({key,code:key.length===1?'Key'+key.toUpperCase():key,target:document.body,shiftKey:false,getModifierState:()=>false,preventDefault(){},...extra});
@@ -31,7 +31,7 @@ function boot(saved={},failStorage=false){
 let app=boot(),$=app.$;assert.equal($('stage-options').children.length,4);assert.equal($('overlay-label').textContent,'开始');
 assert.equal($('scene-overlay').hidden,false);assert.equal($('keyboard-area').inert,true);assert.equal($('primary-action').style.visibility,'hidden');
 $('stage-options').children[2].click();$('help').checked=false;$('help').dispatch('change');assert.equal(app.data().settings.stage,2);assert.equal(app.data().settings.help,false);
-app.key('Enter');assert.equal($('scene-overlay').hidden,true);assert.equal($('holes').children.length,9);assert.equal(app.document.querySelectorAll('.hole-ground').length,9);assert.equal($('primary-label').textContent,'暂停');assert.equal($('help').disabled,true);$('stage-options').children[0].click();assert.equal(app.data().settings.stage,2);
+app.key('Enter');assert.equal($('scene-overlay').hidden,true);assert.equal($('holes').children.length,3);assert.equal(app.document.querySelectorAll('.hole-ground').length,3);assert.equal($('primary-label').textContent,'暂停');assert.equal($('help').disabled,true);$('stage-options').children[0].click();assert.equal(app.data().settings.stage,2);
 app.key('Enter',{repeat:true});assert.equal($('primary-label').textContent,'暂停');app.advance(1000);app.key('Escape');app.advance(5000);assert.equal($('time').textContent,'59');assert.equal($('overlay-label').textContent,'继续');app.key('Enter');assert.equal($('primary-label').textContent,'暂停');
 $('settings-button').click();assert.equal($('settings').open,true);app.key('Enter');assert.equal($('overlay-label').textContent,'继续');app.document.querySelector('[data-close="settings"]').click();assert.equal($('overlay-label').textContent,'继续');app.key('Enter');
 app.key('Enter',{shiftKey:true});assert.equal($('confirm-dialog').open,false);assert.equal($('scene-overlay').hidden,true);
@@ -58,3 +58,36 @@ console.log('PASS: actual app initialization, preferences, locks, shortcuts, dia
  x.document.querySelector('[data-close="settings"]').click();x.key('Enter');get('settings-button').click();assert.equal(get('import').disabled,true);get('settings').dispatch('cancel');assert.equal(get('overlay-label').textContent,'继续');
  console.log('PASS: help-scene hit pause, zero-score exclusion, name skip, transactional import cancel/accept/failure and active-game import lock');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+// Exercise each normal-mode location and the actual DOM animation lifecycle.
+for(let position=0;position<3;position++){
+ const x=boot({},false,()=> (position+.1)/3),get=x.$;
+ get('help').checked=false;get('help').dispatch('change');
+ assert.equal(get('holes').children.length,3);
+ x.key('Enter');
+ let occupied=x.document.querySelector('.occupied');
+ assert.equal(Number(occupied.dataset.position),position);
+ assert.equal(occupied.querySelector('.mole-letter').parentElement.className,'hole-sign');
+ assert.equal(occupied.querySelector('.mole-actor').parentElement.className,'hole-burrow');
+ const target=occupied.querySelector('.mole-letter').textContent;
+ x.key(target==='a'?'s':'a');assert.equal(get('score').textContent,'0');assert.equal(Number(x.document.querySelector('.occupied').dataset.position),position);assert.ok(occupied.querySelector('.mole-body').src.endsWith('mole-hit.svg'));assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='wrong').length,1);
+ x.key(target);x.key(target);x.key('!');assert.equal(get('score').textContent,'1');
+ x.advance(100);
+ const body=occupied.querySelector('.mole-body');assert.ok(body.src.endsWith('mole-hit.svg'));
+ assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='mole-contact').length,1);
+ x.key('Escape');const pose=body.style.transform;x.advance(5000);assert.equal(body.style.transform,pose);
+ assert.equal(get('help').disabled,true);assert.equal(get('scene-overlay').hidden,false);
+ x.key('Enter');x.advance(5120);assert.ok(body.style.transform.includes('translateY'));
+ x.advance(5400);assert.ok(body.style.transform.includes('translateY'));
+ x.advance(5480);assert.equal(body.style.opacity,'0');
+ assert.equal(get('holes').children.length,3);
+ assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='mole-contact').length,1);assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='mole-bounce').length,1);
+ x.advance(5550);occupied=x.document.querySelector('.occupied');
+ assert.equal(Number(occupied.dataset.position),position);
+ assert.equal(occupied.querySelector('.mole-body').style.opacity,'1');
+ assert.equal(x.document.querySelectorAll('.mole-actor').length,1);
+ x.key('Escape');get('end').click();assert.equal(x.document.querySelectorAll('.mole-actor').length,0);
+ get('overlay-action').click();assert.equal(get('score').textContent,'0');assert.equal(get('scene-overlay').hidden,true);
+ assert.equal(get('holes').children.length,3);assert.equal(x.document.querySelectorAll('.mole-actor').length,1);
+}
+console.log('PASS: all three normal locations, unified scene structure, hit once, frozen animation, retreat, respawn and restart cleanup');
