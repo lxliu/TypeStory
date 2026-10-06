@@ -2,6 +2,8 @@
 
 面向8岁键盘初学者的离线打地鼠练习。通过找字母、输入字符、打跑地鼠，熟悉键位及 C++ 常用符号。
 
+![TypeStory 键位帮助模式预览](docs/images/keyboard-help-preview.png)
+
 ## 打开与使用
 
 下载或克隆整个项目，用 Chrome 打开 [index.html](index.html) 即可。无需安装依赖、启动服务器或浏览器扩展，断网也能练习。移动项目时请保持目录完整。

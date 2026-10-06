@@ -14,7 +14,6 @@
  function renderControls(){
   const locked=running(),state=session?.state||'ready';
   $('help').checked=data.settings.help;$('help').disabled=locked;$('help-state').textContent=data.settings.help?'开启':'关闭';$('help-note').hidden=!locked;
-  setText('stage-note',locked?'本局阶段已固定':'选一个，开始吧');
   [...$('stage-options').children].forEach((button,i)=>{const selected=i===data.settings.stage;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.tabIndex=selected?0:-1;button.querySelector('.stage-check').textContent=selected?'✓ 已选择':'';});
   $('primary-action').style.visibility=state==='running'?'visible':'hidden';$('primary-action').disabled=state!=='running';renderOverlay(state);
   setText('session-state',{ready:'准备',running:'进行中',paused:'已暂停',ended:'已结束'}[state]);
