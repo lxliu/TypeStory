@@ -1,35 +1,55 @@
-// Exercise the actual app handlers with a small DOM substitute; this is not visual QA.
-const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-require('../js/keyboard.js');
-const source=fs.readFileSync(require.resolve('../js/app.js'),'utf8');
-function declaration(name){const start=source.indexOf(' function '+name+'(');assert.ok(start>=0);const end=source.indexOf('\n function ',start+1);return source.slice(start,end);}
+// Run the real app scripts against a lightweight DOM. No browser/layout claims.
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const root=path.join(__dirname,'..');
 class Element{
- constructor(){this.children=[];this.style={setProperty(){}};this.dataset={};this.className='';this.hidden=false;this.open=false;this.shows=0;this.textContent='';this.classList={add:c=>{this.className+=' '+c;},remove:c=>{this.className=this.className.split(' ').filter(x=>x!==c).join(' ');}};}
- append(...children){this.children.push(...children);}replaceChildren(){this.children=[];}
- querySelector(selector){return this.all().find(el=>selector.startsWith('.')?el.className.split(' ').includes(selector.slice(1)):el.dataset.code===selector.match(/data-code="([^"]+)"/)[1])||null;}
- all(){return this.children.flatMap(el=>[el,...el.all()]);}
- showModal(){this.open=true;this.shows++;}close(){this.open=false;}
+ constructor(tag='div',doc){this.tagName=tag.toUpperCase();this.doc=doc;this.children=[];this.parentElement=null;this.attributes={};this.dataset={};this.style={setProperty(){}};this.handlers={};this.value='';this.checked=false;this.disabled=false;this.hidden=false;this.open=false;this._text='';this.className='';this.classList={add:(...c)=>{this.className=[...new Set([...this.className.split(' '),...c])].join(' ').trim();},remove:(...c)=>{this.className=this.className.split(' ').filter(x=>!c.includes(x)).join(' ');}};}
+ set textContent(v){this._text=String(v);this.children=[];}get textContent(){return this._text+this.children.map(c=>c.textContent).join('');}
+ append(...children){for(const c of children){c.parentElement=this;this.children.push(c);}}replaceChildren(...children){this.children=[];this._text='';this.append(...children);}
+ setAttribute(k,v){this.attributes[k]=String(v);if(k==='class')this.className=v;if(k==='id')this.id=v;if(k.startsWith('data-'))this.dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=String(v);if(['hidden','disabled','checked'].includes(k))this[k]=true;if(k==='value')this.value=v;}
+ getAttribute(k){if(k.startsWith('data-'))return this.dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]??null;return k==='class'?this.className:k==='src'?this.src:this.attributes[k]??null;}
+ all(){return this.children.flatMap(c=>[c,...c.all()]);}
+ matches(selector){return selector.split(',').some(s=>{s=s.trim();if(s.startsWith('#'))return this.id===s.slice(1);if(s.startsWith('.'))return this.className.split(' ').includes(s.slice(1));const m=/^(\w+)?(?:\[([^=\]]+)(?:="([^"]*)")?\])?$/.exec(s);if(!m)return false;if(m[1]&&this.tagName!==m[1].toUpperCase())return false;if(!m[2])return true;const value=m[2]==='open'?(this.open?'':null):this.getAttribute(m[2]);return m[3]===undefined?value!==null:value===m[3];});}
+ querySelectorAll(s){return this.all().filter(c=>c.matches(s));}querySelector(s){return this.querySelectorAll(s)[0]||null;}closest(s){return this.matches(s)?this:this.parentElement?.closest(s)||null;}
+ addEventListener(name,fn){(this.handlers[name]??=[]).push(fn);}dispatch(name,event={}){const e={target:this,preventDefault(){this.prevented=true;},stopPropagation(){},...event};this['on'+name]?.(e);for(const fn of this.handlers[name]||[])fn(e);return e;}
+ click(){if(!this.disabled)this.dispatch('click');}focus(){this.doc.activeElement=this;}select(){}remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(c=>c!==this);}showModal(){assert.ok(!this.doc.querySelector('dialog[open]'),'no stacked modals');this.open=true;this.shows=(this.shows||0)+1;}close(){this.open=false;}
 }
-const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
-const handlers={},context={K:TSKeyboard,$:get,caps:false,shift:false,pressedCodes:new Set(),data:{settings:{layout:'mac'},progress:{}},document:{createElement:()=>new Element(),querySelectorAll:selector=>get('keyboard').all().filter(el=>el.className.split(' ').includes(selector.slice(1)))},window:{addEventListener:(name,fn)=>handlers[name]=fn},renderTarget(){},updateStats(){},sound(){},save(){},selectedStage:()=>0,TSAudio:{stopMusic(){}},finished:false,mode:'mole',session:{correct:3,accuracy:75,hints:1,elapsed:12000,mistakes:{a:1}},goHome(){},start(){},textChar:c=>c};
-vm.createContext(context);
-for(const name of ['renderKeyboard','syncModifiers','clearPressedKeys','keyEl','finish'])vm.runInContext(declaration(name),context);
-const keyup=source.split('\n').find(line=>line.includes("window.addEventListener('keyup'"));vm.runInContext(keyup,context);
-context.renderKeyboard();
-const event=(caps,shift=false,code='CapsLock')=>({code,shiftKey:shift,getModifierState:()=>caps});
-const label=code=>context.keyEl(code).children[0].textContent;
-context.syncModifiers(event(true));assert.equal(label('KeyA'),'A');assert.equal(get('caps').hidden,false);
-// Mac can report Caps Lock off on keyup rather than on the preceding keydown.
-context.pressedCodes.add('CapsLock');context.pressedCodes.add('KeyF');context.renderKeyboard();
-context.syncModifiers(event(true));handlers.keyup(event(false));assert.equal(label('KeyA'),'a');assert.equal(get('caps').hidden,true);
-assert.equal(context.keyEl('CapsLock').className.includes('pressed'),false);assert.ok(context.keyEl('KeyF').className.includes('pressed'));
-for(const code of ['ShiftLeft','ShiftRight']){
- context.syncModifiers(event(true,true,code));assert.equal(label('KeyA'),'a');assert.equal(label('Digit1'),'!');
- handlers.keyup(event(true,false,code));assert.equal(label('KeyA'),'A');assert.equal(label('Digit1'),'1');
+function boot(saved={},failStorage=false){
+ const document=new Element('document');document.doc=document;document.createElement=tag=>new Element(tag,document);document.getElementById=id=>document.querySelector('#'+id);document.hasFocus=()=>true;document.hidden=false;document.addEventListener=Element.prototype.addEventListener;
+ const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),stack=[document];
+ for(const token of html.match(/<[^>]+>|[^<]+/g)){
+  if(token.startsWith('</')){stack.pop();continue;}if(token.startsWith('<!'))continue;
+  if(token.startsWith('<')){const m=/^<([\w-]+)/.exec(token);if(!m)continue;const el=document.createElement(m[1]);for(const a of token.matchAll(/([\w-]+)(?:="([^"]*)")?/g)){if(a.index<2)continue;el.setAttribute(a[1],a[2]??'');}stack.at(-1).append(el);if(!['meta','link','img','input','br'].includes(m[1]))stack.push(el);
+  }else stack.at(-1)._text+=token;
+ }
+ document.body=document.querySelector('body');const storage=new Map(Object.entries(saved)),events={},audio=[];let now=0,nextFrame;
+ const context={document,console,Math,Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:1280,innerHeight:700,matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>events[name]=fn,requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
+ for(const file of ['keyboard','lessons','core','app'])vm.runInContext(fs.readFileSync(path.join(root,'js',file+'.js'),'utf8'),context,{filename:file+'.js'});
+ const $=id=>document.getElementById(id);
+ const key=(key,extra={})=>events.keydown({key,code:key.length===1?'Key'+key.toUpperCase():key,target:document.body,shiftKey:false,getModifierState:()=>false,preventDefault(){},...extra});
+ return {$,document,storage,key,events,audio,advance(t){now=t;nextFrame(t);},keyup(caps,shift=false,code='CapsLock'){events.keyup({code,shiftKey:shift,getModifierState:()=>caps});},data(){return JSON.parse(storage.get('typestory.v2'));}};
 }
-context.clearPressedKeys();assert.equal(context.pressedCodes.size,0);assert.equal(context.caps,true);assert.equal(get('keyboard').all().some(el=>el.className.includes('pressed')),false);
-handlers.keyup(event(false));assert.equal(label('KeyA'),'a');
-context.finish(false,false);assert.equal(get('result').shows,0);assert.equal(get('start').textContent,'再挑战一次');assert.equal(get('stage').disabled,false);assert.equal(get('message').textContent,'本局已结束，可以调整难度后再挑战');assert.equal(context.session.correct,3);
-context.finish(false,false);assert.equal(get('result').shows,0);
-context.finished=false;context.finish();assert.equal(get('result').shows,1);assert.equal(get('result').open,true);
-console.log('PASS: Caps Lock release synchronization, Shift combinations, held-key redraw/blur cleanup, early-end without modal and natural-timeout result');
+let app=boot(),$=app.$;assert.equal($('stage-options').children.length,4);assert.equal($('primary-label').textContent,'开始');
+$('stage-options').children[2].click();$('help').checked=false;$('help').dispatch('change');assert.equal(app.data().settings.stage,2);assert.equal(app.data().settings.help,false);
+app.key('Enter');assert.equal($('primary-label').textContent,'暂停');assert.equal($('help').disabled,true);$('stage-options').children[0].click();assert.equal(app.data().settings.stage,2);
+app.key('Enter',{repeat:true});assert.equal($('primary-label').textContent,'暂停');app.advance(1000);app.key('Escape');app.advance(5000);assert.equal($('time').textContent,'59');assert.equal($('primary-label').textContent,'继续');app.key('Enter');assert.equal($('primary-label').textContent,'暂停');
+$('settings-button').click();assert.equal($('settings').open,true);app.key('Enter');assert.equal($('primary-label').textContent,'继续');app.document.querySelector('[data-close="settings"]').click();assert.equal($('primary-label').textContent,'继续');app.key('Enter');
+app.key('Enter',{shiftKey:true});assert.equal($('confirm-dialog').open,true);$('confirm-cancel').click();assert.equal($('primary-label').textContent,'暂停');
+app.key('Enter',{shiftKey:true});app.events.blur();$('confirm-cancel').click();assert.equal($('primary-label').textContent,'继续');
+app.key('Enter',{shiftKey:true});$('confirm-ok').click();assert.equal($('primary-label').textContent,'开始');assert.equal(app.document.querySelector('dialog[open]'),null);assert.equal(app.data().lastResults['2:0'].completed,false);assert.equal(app.data().boards['2:0'].length,0);
+app=boot(Object.fromEntries(app.storage));$=app.$;assert.equal(app.data().settings.stage,2);assert.ok($('last-result').textContent.includes('未完成'));app.key('Enter');const target=app.document.querySelector('.mole-letter').textContent;app.key(target);app.key('x');assert.equal($('score').textContent,'1');app.advance(60000);assert.equal($('name-dialog').open,true);assert.equal(app.data().lastResults['2:0'].completed,true);
+$('player-name').value='Leo';$('name-form').dispatch('submit');assert.equal(app.data().boards['2:0'].length,1);assert.equal($('name-dialog').open,false);app.advance(61000);assert.equal(app.data().boards['2:0'].length,1);
+$('leaderboard-button').click();$('board-stages').children[0].click();assert.equal(app.data().settings.stage,2);assert.equal($('board-rows').children.length,10);assert.equal($('board-empty').hidden,false);app.document.querySelector('[data-close="leaderboard"]').click();
+app.key('CapsLock',{getModifierState:()=>true});const label=code=>app.document.querySelector(`[data-code="${code}"]`).children[0].textContent;assert.equal(label('KeyA'),'A');app.keyup(false);assert.equal(label('KeyA'),'a');app.key('Shift',{code:'ShiftLeft',shiftKey:true,getModifierState:()=>true});assert.equal(label('KeyA'),'a');assert.equal(label('Digit1'),'!');app.keyup(true,false,'ShiftLeft');assert.equal(label('KeyA'),'A');assert.equal(label('Digit1'),'1');
+const legacy={version:1,settings:{layout:'mac',size:'large',volume:45,mute:false,moleStage:5},progress:{}};const migrated=boot({'typestory.v1':JSON.stringify(legacy)});assert.equal(migrated.data().settings.stage,3);assert.ok(migrated.storage.has('typestory.v1'));
+const noStore=boot({},true);assert.equal(noStore.$('storage-warning').hidden,false);noStore.key('Enter');assert.equal(noStore.$('primary-label').textContent,'暂停');
+console.log('PASS: actual app initialization, preferences, locks, shortcuts, dialogs, end/cancel/blur, grouped results, naming once, filters, Caps Lock and storage failure');
+// Additional end-state and import transactions, using real event handlers.
+(async()=>{
+ let x=boot(),get=x.$;x.key('Enter');const first=x.document.querySelector('.mole-letter').textContent;x.key(first);x.advance(100);const actor=x.document.querySelector('.mole-actor');assert.ok(actor);x.key('Escape');const frozen=get('time').textContent;x.advance(9000);assert.equal(get('time').textContent,frozen);assert.equal(get('primary-label').textContent,'继续');x.key('Enter');x.advance(69000);assert.equal(get('name-dialog').open,true);get('name-skip').click();assert.equal(x.data().boards['0:1'].length,0);assert.equal(x.data().lastResults['0:1'].score,1);
+ x=boot();get=x.$;x.key('Enter');x.advance(60000);assert.equal(x.document.querySelector('dialog[open]'),null);assert.equal(x.data().lastResults['0:1'].completed,true);assert.equal(x.data().boards['0:1'].length,0);
+ get('settings-button').click();get('import-file').files=[{size:50,text:async()=>'{broken'}];const before=x.storage.get('typestory.v2');await get('import-file').onchange();assert.equal(x.storage.get('typestory.v2'),before);assert.ok(get('import-status').textContent.startsWith('未导入'));
+ const incoming=x.data();incoming.settings.stage=3;incoming.settings.help=false;incoming.lastName='Test';get('import-file').files=[{size:500,text:async()=>JSON.stringify(incoming)}];await get('import-file').onchange();assert.equal(get('confirm-dialog').open,true);get('confirm-cancel').click();assert.equal(get('settings').open,true);assert.equal(x.data().settings.stage,0);
+ await get('import-file').onchange();get('confirm-ok').click();assert.equal(x.data().settings.stage,3);assert.equal(x.data().settings.help,false);assert.equal(get('settings').open,true);assert.equal(get('help-state').textContent,'关闭');
+ x.document.querySelector('[data-close="settings"]').click();x.key('Enter');get('settings-button').click();assert.equal(get('import').disabled,true);get('settings').dispatch('cancel');assert.equal(get('primary-label').textContent,'继续');
+ console.log('PASS: help-scene hit pause, zero-score exclusion, name skip, transactional import cancel/accept/failure and active-game import lock');
+})().catch(error=>{console.error(error);process.exitCode=1;});

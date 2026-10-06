@@ -1,42 +1,58 @@
 (function(root){
-const MOLE_TIMING={duration:650,contact:100,bounce:220,retreat:400,hidden:580};
-const defaults=()=>({version:1,settings:{layout:'mac',size:'standard',volume:45,mute:false,musicEnabled:true,musicVolume:20,moleStage:0},progress:{stage:0,help:true,current:null,completed:{},best:{},last:{}}});
-function validate(data){
- if(!data||data.version!==1||!data.settings||!data.progress)throw Error('不是有效的 TypeStory 进度文件');
- const s=data.settings,p=data.progress;
- if(!['mac','windows'].includes(s.layout)||!['standard','large','huge'].includes(s.size)||!Number.isFinite(s.volume)||s.volume<0||s.volume>100||typeof s.mute!=='boolean'||!Number.isInteger(p.stage)||p.stage<0||p.stage>=TSLessons.phrases.length||typeof p.help!=='boolean')throw Error('设置或阶段无效');
- if(s.musicEnabled!==undefined&&typeof s.musicEnabled!=='boolean'||s.musicVolume!==undefined&&(!Number.isFinite(s.musicVolume)||s.musicVolume<0||s.musicVolume>100))throw Error('音乐设置无效');
- if(s.moleStage!==undefined&&(!Number.isInteger(s.moleStage)||s.moleStage<0||s.moleStage>=TSLessons.stages.length))throw Error('地鼠难度无效');
- const result=defaults();result.settings={layout:s.layout,size:s.size,volume:s.volume,mute:s.mute,musicEnabled:s.musicEnabled===undefined?true:s.musicEnabled,musicVolume:s.musicVolume===undefined?20:s.musicVolume,moleStage:s.moleStage===undefined?0:s.moleStage};result.progress.stage=p.stage;result.progress.help=p.help;
- function validId(id){const m=/^(\d+):(\d+)$/.exec(id);return m&&TSLessons.phrases[+m[1]]&&TSLessons.phrases[+m[1]].texts[+m[2]]!==undefined;}
- if(p.current!==null&&!validId(p.current))throw Error('当前题目无效');result.progress.current=p.current;
- for(const map of ['completed','best','last'])if(!p[map]||typeof p[map]!=='object'||Array.isArray(p[map]))throw Error('进度格式无效');
- for(const [id,value] of Object.entries(p.completed)){if(!validId(id)||value!==true)throw Error('完成记录无效');result.progress.completed[id]=true;}
- for(const [id,value] of Object.entries(p.best)){if(!validId(id)||!value||!Number.isFinite(value.accuracy)||value.accuracy<0||value.accuracy>100||!Number.isFinite(value.seconds)||value.seconds<0)throw Error('成绩记录无效');result.progress.best[id]={accuracy:value.accuracy,seconds:value.seconds};}
- for(const [stage,id] of Object.entries(p.last)){if(!validId(id)||id.split(':')[0]!==stage)throw Error('题目顺序无效');result.progress.last[stage]=id;}
+'use strict';
+const MOLE_TIMING=Object.freeze({duration:650,contact:100,bounce:220,retreat:400,hidden:580}),DURATION=60000;
+const groupKey=(stage,help)=>`${stage}:${help?1:0}`;
+const groups=()=>Object.fromEntries(TSLessons.stages.flatMap((_,i)=>[false,true].map(h=>[groupKey(i,h),[]])));
+const defaults=()=>({version:2,settings:{layout:'mac',size:'standard',volume:45,mute:false,musicEnabled:true,musicVolume:20,stage:0,help:true},lastName:'',lastResults:{},boards:groups()});
+const integer=(n,min,max)=>Number.isInteger(n)&&n>=min&&n<=max;
+const accuracy=(score,errors)=>score+errors?Math.round(score/(score+errors)*100):100;
+function cleanName(value,optional=false){if(typeof value!=='string')throw Error('名字无效');const name=value.trim();if((!optional&&!name)||[...name].length>12||/[\x00-\x1f\x7f]/.test(name))throw Error('名字需为1–12个字符');return name;}
+function readSettings(s,legacy=false){
+ if(!s||!['mac','windows'].includes(s.layout)||!['standard','large','huge'].includes(s.size)||!integer(s.volume,0,100)||typeof s.mute!=='boolean')throw Error('设置无效');
+ const musicEnabled=s.musicEnabled===undefined&&legacy?true:s.musicEnabled,musicVolume=s.musicVolume===undefined&&legacy?20:s.musicVolume;
+ if(typeof musicEnabled!=='boolean'||!integer(musicVolume,0,100))throw Error('音乐设置无效');
+ let stage=s.stage,help=s.help;
+ if(legacy){const old=s.moleStage===undefined?0:s.moleStage;if(!integer(old,0,5))throw Error('旧版阶段无效');stage=[0,1,2,3,3,3][old];help=true;}
+ if(!integer(stage,0,3)||typeof help!=='boolean')throw Error('阶段或帮助设置无效');
+ return {layout:s.layout,size:s.size,volume:s.volume,mute:s.mute,musicEnabled,musicVolume,stage,help};
+}
+function readRecord(r,key,ranked){
+ if(!r||!integer(r.stage,0,3)||typeof r.help!=='boolean'||groupKey(r.stage,r.help)!==key||typeof r.id!=='string'||!r.id||r.id.length>100||!integer(r.score,0,1000)||!integer(r.errors,0,100000)||!Number.isFinite(r.elapsed)||r.elapsed<0||r.elapsed>DURATION||typeof r.completed!=='boolean'||r.completed&&r.elapsed!==DURATION||r.accuracy!==accuracy(r.score,r.errors)||typeof r.at!=='string'||!Number.isFinite(Date.parse(r.at)))throw Error('成绩记录无效');
+ if(ranked&&(!r.completed||!r.score))throw Error('排行榜只接受完整且有得分的成绩');
+ const record={id:r.id,stage:r.stage,help:r.help,score:r.score,errors:r.errors,accuracy:r.accuracy,elapsed:r.elapsed,completed:r.completed,at:r.at};
+ if(ranked)record.name=cleanName(r.name);return record;
+}
+const compare=(a,b)=>b.score-a.score||b.accuracy-a.accuracy;
+function validate(raw){
+ if(!raw||![1,2].includes(raw.version))throw Error('不是有效的 TypeStory 备份');
+ const result=defaults();result.settings=readSettings(raw.settings,raw.version===1);
+ if(raw.version===1){if(!raw.progress||typeof raw.progress!=='object'||Array.isArray(raw.progress))throw Error('旧版备份格式无效');return result;}
+ result.lastName=cleanName(raw.lastName,true);
+ for(const field of ['lastResults','boards'])if(!raw[field]||typeof raw[field]!=='object'||Array.isArray(raw[field]))throw Error('成绩数据无效');
+ const keys=Object.keys(result.boards),ids=new Set();
+ for(const key of Object.keys(raw.lastResults)){if(!keys.includes(key))throw Error('成绩分组无效');result.lastResults[key]=readRecord(raw.lastResults[key],key,false);}
+ for(const key of Object.keys(raw.boards)){
+  if(!keys.includes(key)||!Array.isArray(raw.boards[key])||raw.boards[key].length>10)throw Error('排行榜分组无效');
+  result.boards[key]=raw.boards[key].map(r=>{const item=readRecord(r,key,true);if(ids.has(item.id))throw Error('重复成绩');ids.add(item.id);return item;}).sort(compare);
+ }
  return result;
 }
-function pickPhrase(progress,stage,random=Math.random){const all=TSLessons.phrases[stage].texts.map((_,i)=>stage+':'+i);if(progress.current&&all.includes(progress.current))return progress.current;let pool=all.filter(id=>!progress.completed[id]);if(!pool.length)pool=all;const filtered=pool.filter(id=>id!==progress.last[stage]);if(filtered.length)pool=filtered;return pool[Math.floor(random()*pool.length)];}
-function stageProgress(progress,stage){return {completed:TSLessons.phrases[stage].texts.filter((_,i)=>progress.completed[stage+':'+i]).length,total:TSLessons.phrases[stage].texts.length};}
-function resetProgress(progress,stage=null){
- const matches=id=>stage===null||id.startsWith(stage+':');
- for(const map of ['completed','best'])for(const id of Object.keys(progress[map]))if(matches(id))delete progress[map][id];
- if(progress.current&&matches(progress.current))progress.current=null;
- for(const id of Object.keys(progress.last))if(stage===null||Number(id)===stage)delete progress.last[id];
-}
+function rankFor(data,record){if(!record.completed||!record.score)return 0;const board=data.boards[groupKey(record.stage,record.help)];if(board.some(r=>r.id===record.id))return 0;const index=board.findIndex(r=>compare(record,r)<0),rank=index<0?board.length+1:index+1;return rank<=10?rank:0;}
+function addScore(data,record,name){const rank=rankFor(data,record);if(!rank)return 0;const entry={...record,name:cleanName(name)},key=groupKey(record.stage,record.help);data.boards[key].splice(rank-1,0,entry);data.boards[key]=data.boards[key].slice(0,10);data.lastName=entry.name;return rank;}
 class Session{
- constructor(mode,target,now=0){this.mode=mode;this.target=target;this.index=0;this.correct=0;this.errors=0;this.hints=0;this.mistakes={};this.active=true;this.paused=false;this.elapsed=0;this.since=now;this.hinted=false;this.moleEffect=null;}
- tick(now){if(this.active&&!this.paused){this.elapsed+=Math.max(0,now-this.since);this.since=now;if(this.mode==='mole'&&this.elapsed>=60000){this.elapsed=60000;this.active=false;this.moleEffect=null;}}return this.active;}
+ constructor(stage,help,now=0){this.stage=stage;this.help=help;this.active=true;this.paused=false;this.elapsed=0;this.since=now;this.correct=0;this.errors=0;this.target='';this.moleEffect=null;this.nextTarget();}
+ get state(){return !this.active?'ended':this.paused?'paused':'running';}
+ get accuracy(){return accuracy(this.correct,this.errors);}
+ get hitProgress(){return this.moleEffect?.kind==='hit'?Math.min(1,(this.elapsed-this.moleEffect.start)/MOLE_TIMING.duration):0;}
+ tick(now){if(this.active&&!this.paused){this.elapsed=Math.min(DURATION,this.elapsed+Math.max(0,now-this.since));this.since=now;if(this.elapsed>=DURATION){this.active=false;this.moleEffect=null;}}return this.active;}
  pause(now){this.tick(now);if(this.active)this.paused=true;}
  resume(now){if(this.active){this.paused=false;this.since=now;}}
  end(now){this.tick(now);this.active=false;this.moleEffect=null;}
- get hitProgress(){return this.moleEffect&&this.moleEffect.kind==='hit'?Math.min(1,(this.elapsed-this.moleEffect.start)/MOLE_TIMING.duration):0;}
+ nextTarget(random=Math.random){const pool=[...TSLessons.stages[this.stage].chars].filter(c=>c!==this.target);this.target=pool[Math.floor(random()*pool.length)];}
+ input(char,now){this.tick(now);if(!this.active||this.paused||this.moleEffect?.kind==='hit')return 'ignored';if(char!==this.target){this.errors++;this.moleEffect={kind:'wrong',start:this.elapsed};return 'wrong';}this.correct++;this.moleEffect={kind:'hit',start:this.elapsed,cues:[]};return 'correct';}
  takeMoleCues(){if(!this.active||this.paused||this.moleEffect?.kind!=='hit')return [];const effect=this.moleEffect,age=this.elapsed-effect.start;return [['mole-contact',MOLE_TIMING.contact],['mole-bounce',MOLE_TIMING.bounce]].filter(([name,time])=>{if(age<time||effect.cues.includes(name))return false;effect.cues.push(name);return true;}).map(([name])=>name);}
- takeNextMole(){if(!this.active||this.paused||!this.moleEffect||this.moleEffect.kind!=='hit'||this.hitProgress<1)return false;this.moleEffect=null;return true;}
- get expected(){return this.mode==='phrase'?this.target[this.index]:this.target;}
- get accuracy(){return this.correct+this.errors?Math.round(this.correct/(this.correct+this.errors)*100):100;}
- input(char,now){this.tick(now);if(!this.active||this.paused||this.mode==='mole'&&this.moleEffect?.kind==='hit')return 'ignored';if(char!==this.expected){if(this.mode==='mole')this.moleEffect={kind:'wrong',start:this.elapsed};this.errors++;this.mistakes[this.expected]=(this.mistakes[this.expected]||0)+1;return 'wrong';}this.correct++;if(this.mode==='mole')this.moleEffect={kind:'hit',start:this.elapsed,cues:[]};if(this.mode==='phrase'){this.index++;if(this.index===this.target.length){this.active=false;return 'complete';}}return 'correct';}
- hint(){if(this.active&&!this.paused&&!this.hinted){this.hints++;this.hinted=true;return true;}return false;}
+ takeNextMole(){if(!this.active||this.paused||this.moleEffect?.kind!=='hit'||this.hitProgress<1)return false;this.moleEffect=null;this.nextTarget();return true;}
+ record(id,at){return {id,at,stage:this.stage,help:this.help,score:this.correct,errors:this.errors,accuracy:this.accuracy,elapsed:this.elapsed,completed:this.elapsed===DURATION};}
 }
-root.TSCore={MOLE_TIMING,defaults,validate,pickPhrase,stageProgress,resetProgress,Session};
+root.TSCore={MOLE_TIMING,DURATION,defaults,validate,groupKey,cleanName,rankFor,addScore,Session};
 })(typeof window==='undefined'?globalThis:window);

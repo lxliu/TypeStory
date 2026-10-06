@@ -1,75 +1,51 @@
 (() => {
  'use strict';
- const $=id=>document.getElementById(id),K=TSKeyboard,C=TSCore,L=TSLessons;
- let data=C.defaults(),mode=null,session=null,shift=false,caps=false,hole=0,phraseId=null,finished=false,storageOK=true,lastFreeChar=null,freeAutoStart=false;
- const pressedCodes=new Set();
- const storageKey='typestory.v1';
- function storageWarning(){storageOK=false;$('storage-warning').hidden=false;$('storage-warning').textContent='此浏览器暂时无法自动保存进度。仍然可以练习，请在设置中导出备份。';}
- try{localStorage.setItem(storageKey+'.probe','1');localStorage.removeItem(storageKey+'.probe');const saved=localStorage.getItem(storageKey);if(saved)data=C.validate(JSON.parse(saved));}catch(_){storageWarning();}
- function save(){try{localStorage.setItem(storageKey,JSON.stringify(data));if(!storageOK){storageOK=true;$('storage-warning').hidden=true;}}catch(_){storageWarning();}}
- function syncMusic(){if(mode==='mole'&&session&&session.active&&!session.paused){TSAudio.startMusic(data.settings);if(session.moleEffect?.kind==='hit')TSAudio.duckMusic((1-session.hitProgress)*C.MOLE_TIMING.duration/1000);}else TSAudio.pauseMusic();}
- function sound(kind){TSAudio.play(kind,data.settings);}
- function textChar(c){return c===' '?'空格':c;}
- function selectedStage(){return Number($('stage').value)||0;}
- const difficultyNames=['基础键位','小写字母','大写字母','数字与符号','Shift 符号','综合挑战'];
- const difficultyExamples=['a s d f','a b c','A B C','1 2 ;','{ } +','a A 1 {'];
- function difficultyFeedback(){if(mode==='mole'&&(!session||!session.active))$('message').textContent='本局练习：'+difficultyNames[selectedStage()]+' · '+difficultyExamples[selectedStage()]+' · 选好后点击开始练习。';}
- function renderDifficulty(){
-  $('mole-difficulty').hidden=mode!=='mole';if(mode!=='mole')return;
-  const locked=!!(session&&session.active),current=selectedStage();
-  $('difficulty-note').textContent=locked?'本局难度已固定，结束后可切换':'从左到右，逐步挑战';
-  for(const [i,button] of [...$('difficulty-options').children].entries()){
-   const selected=i===current;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.tabIndex=selected?0:-1;
-   button.querySelector('.difficulty-selected').textContent=selected?'✓ 已选择':'';
-  }
+ const $=id=>document.getElementById(id),C=TSCore,K=TSKeyboard,L=TSLessons,A=TSAudio;
+ const storageKey='typestory.v2',pressedCodes=new Set(),reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
+ let data=C.defaults(),session=null,finished=false,shift=false,caps=false,hole=0,storageOK=true,pendingScore=null,confirmation=null,confirmationLostFocus=false,boardStage=0,boardHelp=true,newRecordId=null;
+ function storageWarning(){storageOK=false;$('storage-warning').hidden=false;}
+ function save(){try{localStorage.setItem(storageKey,JSON.stringify(data));storageOK=true;$('storage-warning').hidden=true;}catch(_){storageWarning();}}
+ try{const current=localStorage.getItem(storageKey),legacy=current===null?localStorage.getItem('typestory.v1'):null;if(current!==null)data=C.validate(JSON.parse(current));else if(legacy!==null)data=C.validate(JSON.parse(legacy));localStorage.setItem(storageKey+'.probe','1');localStorage.removeItem(storageKey+'.probe');if(current===null)save();}catch(_){storageWarning();}
+ const sound=kind=>A.play(kind,data.settings),running=()=>!!session?.active,openDialog=()=>document.querySelector('dialog[open]');
+ function message(value){$('message').textContent=value;}
+ function setText(id,value){if($(id).textContent!==String(value))$(id).textContent=value;}
+ function syncMusic(){if(running()&&!session.paused&&!openDialog()){A.startMusic(data.settings);if(session.moleEffect?.kind==='hit')A.duckMusic((1-session.hitProgress)*C.MOLE_TIMING.duration/1000);}else A.pauseMusic();}
+ function renderControls(){
+  const locked=running(),state=session?.state||'ready';
+  $('help').checked=data.settings.help;$('help').disabled=locked;$('help-state').textContent=data.settings.help?'开启':'关闭';$('help-note').hidden=!locked;
+  setText('stage-note',locked?'本局阶段已固定':'选一个，开始吧');
+  [...$('stage-options').children].forEach((button,i)=>{const selected=i===data.settings.stage;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.tabIndex=selected?0:-1;button.querySelector('.stage-check').textContent=selected?'✓ 已选择':'';});
+  $('end').disabled=!locked;setText('primary-label',state==='running'?'暂停':state==='paused'?'继续':'开始');setText('primary-shortcut',state==='running'?'Esc':'Enter');
+  setText('session-state',{ready:'准备',running:'进行中',paused:'已暂停',ended:'已结束'}[state]);
+  const last=data.lastResults[C.groupKey(data.settings.stage,data.settings.help)];
+  setText('last-result',last?`上次 ${last.score}分 · 准确率${last.accuracy}%${last.completed?'':' · 未完成'}`:'上次：还没练过');
+  updateStats();
  }
- function chooseDifficulty(index){if(mode!=='mole'||session?.active)return;$('stage').value=index;data.settings.moleStage=index;save();renderDifficulty();difficultyFeedback();}
- difficultyNames.forEach((name,i)=>{
-  const button=document.createElement('button');button.type='button';button.className='difficulty-option';button.setAttribute('role','radio');button.setAttribute('aria-label',(i+1)+' '+name+'，示例 '+difficultyExamples[i]);
-  const title=document.createElement('span');title.className='difficulty-name';title.textContent=(i+1)+' '+name;
-  const example=document.createElement('span');example.className='difficulty-example';example.textContent=difficultyExamples[i];
-  const selected=document.createElement('span');selected.className='difficulty-selected';button.append(title,example,selected);button.onclick=()=>chooseDifficulty(i);
-  button.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;e.preventDefault();e.stopPropagation();if(session?.active)return;const next=e.key==='Home'?0:e.key==='End'?5:(i+(['ArrowRight','ArrowDown'].includes(e.key)?1:5))%6;chooseDifficulty(next);$('difficulty-options').children[next].focus();};
-  $('difficulty-options').append(button);
+ function updateStats(){setText('score',session?session.correct:0);setText('time',session?Math.ceil((C.DURATION-session.elapsed)/1000):60);}
+ function selectStage(index){if(running())return;data.settings.stage=index;session=null;save();renderControls();renderTarget();message('双手放在 F 和 J，眼睛看屏幕。');}
+ L.stages.forEach((stage,i)=>{
+  const button=document.createElement('button');button.className='stage-option';button.type='button';button.setAttribute('role','radio');button.setAttribute('aria-label',`${i+1} ${stage.name}，示例 ${stage.example}`);
+  for(const [cls,text] of [['stage-name',`${i+1} ${stage.name}`],['stage-example',stage.example],['stage-check','']]){const span=document.createElement('span');span.className=cls;span.textContent=text;button.append(span);}
+  button.onclick=()=>selectStage(i);button.onkeydown=e=>{if(['Enter',' '].includes(e.key)){e.stopPropagation();return;}if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;e.preventDefault();e.stopPropagation();if(running())return;const next=e.key==='Home'?0:e.key==='End'?3:(i+(['ArrowRight','ArrowDown'].includes(e.key)?1:3))%4;selectStage(next);$('stage-options').children[next].focus();};$('stage-options').append(button);
+  const filter=document.createElement('button');filter.textContent=stage.name;filter.onclick=()=>{boardStage=i;renderBoard();};$('board-stages').append(filter);
  });
- function applySettings(){document.body.dataset.size=data.settings.size;for(const id of ['layout','size','volume','mute','musicEnabled','musicVolume']){if(id==='mute'||id==='musicEnabled')$(id).checked=data.settings[id];else $(id).value=data.settings[id];}renderKeyboard();syncMusic();}
- function renderKeyboard(){
-  $('keyboard').replaceChildren();K.rows.forEach(row=>{const div=document.createElement('div');div.className='key-row';row.forEach(k=>{const el=document.createElement('div');el.className='key'+(k.base.length>1?' function':'')+(['KeyF','KeyJ'].includes(k.code)?' home':'');el.dataset.code=k.code;el.style.setProperty('--width',k.width);if(k.finger)el.style.setProperty('--finger',K.colors[k.finger]);const label=document.createElement('span');let value=k.base;if(k.base.length===1)value=(/^Key/.test(k.code)?shift!==caps:shift)?k.upper:k.base;if(k.code==='Space')value='空格';if(data.settings.layout==='windows'){value=({AltLeft:'alt',AltRight:'alt',MetaLeft:'win',MetaRight:'win',Enter:'enter',Backspace:'backspace',Fn:'menu'})[k.code]||value;}label.className='key-label';label.textContent=value;el.append(label);if(k.code==='ArrowUp'){const stack=document.createElement('div');stack.className='arrow-stack';stack.append(el);div.append(stack);}else if(k.code==='ArrowDown'){div.querySelector('.arrow-stack').append(el);}else div.append(el);});$('keyboard').append(div);});
-  for(const code of pressedCodes){const el=keyEl(code);if(el)el.classList.add('pressed');}
-  renderTarget();
- }
- function syncModifiers(e){
-  const nextCaps=e.getModifierState('CapsLock'),nextShift=e.shiftKey;
-  if(nextCaps===caps&&nextShift===shift)return;
-  caps=nextCaps;shift=nextShift;$('caps').hidden=!caps;renderKeyboard();
- }
- function clearPressedKeys(){pressedCodes.clear();document.querySelectorAll('.pressed').forEach(el=>el.classList.remove('pressed'));shift=false;renderKeyboard();}
  function keyEl(code){return $('keyboard').querySelector('[data-code="'+code+'"]');}
- function teaching(char){const g=K.guidance(char);if(!g)return '';return (char===' '?'按最下面的长空格键 · 拇指':g.key.base.toUpperCase()+' 键 · '+g.label)+(g.shift?' · 按住任意 Shift':'');}
- function renderTarget(){
-  document.querySelectorAll('.target,.shift-target').forEach(el=>el.classList.remove('target','shift-target'));
-  document.querySelectorAll('.target-content,.finger-label,.shift-instruction').forEach(el=>el.remove());
-  const playing=session&&session.active,show=mode==='free'||$('help').checked;
-  $('scene').dataset.help=show?'true':'false';
-  $('keyboard-area').hidden=!show;
-  $('hint-card').hidden=!(playing&&!show&&session.hinted);
-  $('hint-card').replaceChildren();
-  if(playing&&!show&&session.hinted){const letter=document.createElement('strong');letter.textContent=textChar(session.expected);const description=document.createElement('span');description.textContent=teaching(session.expected);$('hint-card').append(letter,description);}
-  if(mode==='mole')renderHoles();
-  const char=mode==='free'?lastFreeChar:playing?session.expected:null,g=char===null?null:K.guidance(char);
-  if(g&&show){
-   const el=keyEl(g.key.code);el.classList.add('target');
-   const finger=document.createElement('span');finger.className='finger-label';finger.textContent=g.label;
-   if(mode==='mole'){
-    const content=document.createElement('div');content.className='target-content';
-    const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=char;
-    content.append(letter,makeMole(),finger);el.append(content);
-   }else el.append(finger);
-   if(g.shift)g.shiftCodes.forEach(code=>{const shiftKey=keyEl(code);shiftKey.classList.add('shift-target');const instruction=document.createElement('span');instruction.className='shift-instruction';instruction.textContent='按住';shiftKey.append(instruction);});
-  }
-  if(mode==='phrase'&&session){const board=$('phrase-board');board.replaceChildren();[...session.target].forEach((c,i)=>{const el=document.createElement('span');el.className=(c===' '?'space-char ':'')+'char '+(i<session.index?'done':i===session.index?'current':'pending');el.textContent=textChar(c);el.setAttribute('aria-label',(i<session.index?'已完成 ':i===session.index?'当前输入 ':'未开始 ')+(c===' '?'空格':c));board.append(el);});}
+ function renderKeyboard(){
+  $('keyboard').replaceChildren();K.rows.forEach(row=>{const div=document.createElement('div');div.className='key-row';row.forEach(k=>{const el=document.createElement('div');el.className='key'+(k.base.length>1?' function':'')+(['KeyF','KeyJ'].includes(k.code)?' home':'');el.dataset.code=k.code;el.style.setProperty('--width',k.width);if(k.finger)el.style.setProperty('--finger',K.colors[k.finger]);const label=document.createElement('span');let value=k.base;if(k.base.length===1)value=(/^Key/.test(k.code)?shift!==caps:shift)?k.upper:k.base;if(k.code==='Space')value='空格';if(data.settings.layout==='windows')value=({AltLeft:'alt',AltRight:'alt',MetaLeft:'win',MetaRight:'win',Enter:'enter',Backspace:'backspace',Fn:'menu'})[k.code]||value;label.className='key-label';label.textContent=value;el.append(label);if(pressedCodes.has(k.code))el.classList.add('pressed');if(k.code==='ArrowUp'){const stack=document.createElement('div');stack.className='arrow-stack';stack.append(el);div.append(stack);}else if(k.code==='ArrowDown')div.querySelector('.arrow-stack').append(el);else div.append(el);});$('keyboard').append(div);});renderTarget();
  }
-
+ function syncModifiers(e){const nextCaps=e.getModifierState('CapsLock'),nextShift=e.shiftKey;if(nextCaps===caps&&nextShift===shift)return;caps=nextCaps;shift=nextShift;$('caps').hidden=!caps;renderKeyboard();}
+ function clearPressedKeys(){pressedCodes.clear();shift=false;renderKeyboard();}
+ function renderTarget(){
+  document.querySelectorAll('.target,.shift-target').forEach(el=>el.classList.remove('target','shift-target'));document.querySelectorAll('.target-content,.shift-instruction').forEach(el=>el.remove());
+  $('keyboard-area').hidden=!data.settings.help;$('holes').hidden=data.settings.help;$('holes').replaceChildren();
+  if(!data.settings.help){for(let i=0;i<9;i++){const el=document.createElement('div');el.className='hole';if(running()&&i===hole){const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;el.append(letter,makeMole());}$('holes').append(el);}}
+  else if(running()){
+   const g=K.guidance(session.target),key=keyEl(g.key.code),content=document.createElement('div');key.classList.add('target');content.className='target-content';
+   const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;const finger=document.createElement('span');finger.className='finger-label';finger.textContent=g.label;content.append(letter,makeMole(),finger);key.append(content);
+   if(g.shift)for(const code of g.shiftCodes){const el=keyEl(code),label=document.createElement('span');el.classList.add('shift-target');label.className='shift-instruction';label.textContent='按住';el.append(label);}
+  }
+  paintMoleEffect();
+ }
  function makeMole(){
   const actor=document.createElement('div');actor.className='mole-actor';
   const image=document.createElement('img');image.className='mole-body';image.src='assets/images/mole-bust.svg';image.alt='等待输入的地鼠';
@@ -78,22 +54,16 @@
   const plus=document.createElement('span');plus.className='mole-plus';plus.textContent='+1';plus.setAttribute('aria-hidden','true');
   const mask=document.createElement('div');mask.className='mole-mask';mask.append(image);const rim=document.createElement('div');rim.className='mole-rim';actor.append(mask,rim,hammer,stars,plus);return actor;
  }
- function renderHoles(){
-  const visible=mode==='mole'&&!$('help').checked;$('holes').hidden=!visible;$('holes').replaceChildren();if(!visible)return;
-  for(let i=0;i<9;i++){const div=document.createElement('div');div.className='hole';if(i===hole&&session&&session.active){const char=document.createElement('span');char.className='mole-letter';char.textContent=session.expected;div.append(char,makeMole());}$('holes').append(div);}
- }
- const reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
  function paintMoleEffect(){
-  if(mode!=='mole')return;
   const effect=session?.moleEffect,age=effect?session.elapsed-effect.start:0,T=C.MOLE_TIMING;
   for(const actor of document.querySelectorAll('.mole-actor')){
    const body=actor.querySelector('.mole-body'),hammer=actor.querySelector('.mole-hammer'),stars=actor.querySelector('.mole-stars'),plus=actor.querySelector('.mole-plus');
    body.style.transform='none';body.style.opacity='1';hammer.style.opacity='0';stars.style.opacity='0';plus.style.opacity='0';
-   const struck=effect&&(effect.kind==='wrong'||age>=T.contact);
+   const struck=effect&&(effect.kind==='wrong'?age<350:age>=T.contact);
    const src='assets/images/'+(struck?'mole-hit.svg':'mole-bust.svg');if(body.getAttribute('src')!==src)body.src=src;
    body.alt=struck?'打中了，地鼠正在跑回洞里':'等待输入的地鼠';
    if(!effect||!session.active)continue;
-   if(effect.kind==='wrong'){if(age<350&&!reducedMotion.matches)body.style.transform='translateX('+Math.sin(age/350*Math.PI*4)*8+'%) rotate('+Math.sin(age/350*Math.PI*4)*8+'deg)';if(age>=350)body.src='assets/images/mole-bust.svg';continue;}
+   if(effect.kind==='wrong'){if(age<350&&!reducedMotion.matches)body.style.transform='translateX('+Math.sin(age/350*Math.PI*4)*8+'%) rotate('+Math.sin(age/350*Math.PI*4)*8+'deg)';continue;}
    const p=session.hitProgress;
    stars.style.opacity=age>=T.contact&&age<T.hidden?'1':'0';plus.style.opacity=age>=T.contact?'1':'0';
    stars.style.transform='translateY('+(-p*8)+'px) scale('+(1+p*.5)+')';plus.style.transform='translateY('+(-p*12)+'px)';
@@ -104,69 +74,73 @@
    else if(age>=T.retreat){const q=Math.min(1,(age-T.retreat)/(T.hidden-T.retreat));body.style.transform='translateY('+(q*115)+'%)';if(age>=T.hidden)body.style.opacity='0';}
   }
  }
- function updateStats(){renderDifficulty();const stage=selectedStage();$('stage-progress').hidden=mode!=='phrase';if(mode==='phrase'){const p=C.stageProgress(data.progress,stage);$('stage-progress').textContent='本阶段已完成 '+p.completed+'/'+p.total;}if(!session){$('score').textContent='准备开始';$('time').textContent='';$('accuracy').textContent='';$('progress').textContent='';return;}$('score').textContent=mode==='mole'?'⭐ '+session.correct+' 分':'✓ '+session.correct+' 次正确';$('time').textContent=mode==='mole'?'⏱ 剩余 '+Math.ceil((60000-session.elapsed)/1000)+' 秒':'⏱ '+Math.floor(session.elapsed/1000)+' 秒';$('accuracy').textContent='准确率 '+session.accuracy+'%';$('progress').textContent=mode==='phrase'?'进度 '+session.index+'/'+session.target.length+' · 求助 '+session.hints+' 次':'求助 '+session.hints+' 次';}
- function selectMode(next){stop();mode=next;$('home').hidden=true;$('play').hidden=false;document.body.dataset.mode=mode;$('reset-stage').hidden=mode!=='phrase';$('mode-title').textContent={free:'键盘探索',mole:'地鼠出没',phrase:'短句小径'}[mode];$('free-display').hidden=mode!=='free';$('phrase-board').hidden=mode!=='phrase';$('phrase-board').replaceChildren();$('stage-label').hidden=mode!=='phrase';$('help-text').textContent=mode==='mole'?'显示键位提示':'帮助模式';$('help-label').hidden=mode==='free';$('stage').replaceChildren();(mode==='phrase'?L.phrases:L.stages).forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.name;$('stage').append(o);});if(mode==='mole')$('stage').value=data.settings.moleStage;if(mode==='phrase'){$('stage').value=data.progress.stage;$('help').checked=data.progress.help;}$('message').textContent=mode==='free'?'点击开始，然后用实体键盘探索。':'选择阶段与帮助模式，准备好了就开始。';$('start').textContent=mode==='phrase'?'继续练习':'开始练习';freeAutoStart=mode==='free';renderKeyboard();updateStats();difficultyFeedback();}
- function stop(){freeAutoStart=false;TSAudio.stopMusic();lastFreeChar=null;session=null;finished=false;if($('result').open)$('result').close();$('pause').hidden=true;$('end').hidden=true;$('hint').hidden=true;$('holes').hidden=true;$('start').hidden=false;$('stage').disabled=false;$('help').disabled=false;}
- function newMole(){const chars=L.stages[selectedStage()].chars;const pool=[...chars].filter(c=>c!==session.target);session.target=pool[Math.floor(Math.random()*pool.length)]||chars[0];session.hinted=false;hole=Math.floor(Math.random()*9);}
- function start(){freeAutoStart=false;TSAudio.stopMusic();TSAudio.enable();finished=false;if($('result').open)$('result').close();const now=performance.now();if(mode==='phrase'){data.progress.stage=selectedStage();data.progress.help=$('help').checked;phraseId=C.pickPhrase(data.progress,selectedStage());data.progress.current=phraseId;const [s,i]=phraseId.split(':').map(Number);session=new C.Session(mode,L.phrases[s].texts[i],now);save();}else{session=new C.Session(mode,'',now);if(mode==='mole')newMole();}$('stage').disabled=true;$('help').disabled=false;$('start').hidden=true;$('pause').hidden=false;$('end').hidden=false;$('pause').textContent='暂停';$('hint').hidden=mode==='free'||$('help').checked;$('message').textContent=mode==='free'?'双手轻放在 F 和 J，随意敲一敲。':'准确比快更重要，地鼠会等你。';renderTarget();updateStats();syncMusic();}
- function pause(){if(!session||!session.active||session.paused)return;session.pause(performance.now());TSAudio.silence('effect');syncMusic();if(!session.active){finish();return;}$('pause').textContent='继续练习';$('message').textContent='已暂停，准备好后点击继续练习。';}
- function finish(completed=true,showResult=true){if(finished)return;finished=true;TSAudio.stopMusic();if(completed)sound('complete');if(mode==='phrase'&&completed){data.progress.completed[phraseId]=true;data.progress.last[selectedStage()]=phraseId;data.progress.current=null;const old=data.progress.best[phraseId];data.progress.best[phraseId]={accuracy:Math.max(old?old.accuracy:0,session.accuracy),seconds:Math.min(old?old.seconds:Infinity,session.elapsed/1000)};save();}$('pause').hidden=true;$('end').hidden=true;$('hint').hidden=true;$('stage').disabled=false;$('help').disabled=false;$('start').hidden=false;$('start').textContent=mode==='phrase'?'下一条练习':'再挑战一次';updateStats();renderTarget();if(!showResult){if($('result').open)$('result').close();$('message').textContent='本局已结束，可以调整难度后再挑战';return;}if(!$('result').open)$('result').showModal();$('result').replaceChildren();const h=document.createElement('h2');h.textContent=mode==='phrase'?(completed?'🌼 小句子完成啦！':'这条短句还没完成'):'🌼 这一局，做得不错！';const p=document.createElement('p');p.textContent=(mode==='mole'?'得分 '+session.correct+' · ':'耗时 '+(session.elapsed/1000).toFixed(1)+' 秒 · ')+'准确率 '+session.accuracy+'% · 求助 '+session.hints+' 次';const mistakes=document.createElement('p');const top=Object.entries(session.mistakes).sort((a,b)=>b[1]-a[1]).slice(0,3);mistakes.textContent=!completed&&mode==='phrase'?'这条题目已保留，下次从开头继续练习。':top.length?'下次一起练：'+top.map(([c,n])=>textChar(c)+'（'+n+' 次）').join('、'):'每一次都输入正确，继续保持！';const again=document.createElement('button');again.className='primary';again.textContent=mode==='phrase'?(completed?'继续下一条':'重新练这一条'):'再玩一次';again.onclick=start;const stay=document.createElement('button');stay.textContent='留在这里';stay.onclick=()=>{$('result').close();};const back=document.createElement('button');back.textContent='返回首页';back.onclick=goHome;$('result').append(h,p,mistakes,again,stay,back);$('message').textContent='休息一下手指，也看看远处。';updateStats();renderTarget();}
- function goHome(){stop();mode=null;delete document.body.dataset.mode;$('home').hidden=false;$('play').hidden=true;renderDifficulty();}
- function flash(el,cls){if(!el)return;el.classList.remove(cls);void el.offsetWidth;el.classList.add(cls);setTimeout(()=>el.classList.remove(cls),250);}
- document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>selectMode(b.dataset.mode));$('back').onclick=goHome;document.querySelector('.brand').onclick=e=>{e.preventDefault();goHome();};$('start').onclick=start;$('pause').onclick=()=>{if(session.paused){TSAudio.enable();session.resume(performance.now());syncMusic();$('pause').textContent='暂停';$('message').textContent='继续出发，小手指！';}else pause();};$('hint').onclick=()=>{if(session&&session.hint()){renderTarget();updateStats();}};
- $('stage').onchange=()=>{if(mode==='phrase'){data.progress.stage=selectedStage();save();}updateStats();};$('help').onchange=()=>{if(session){session.hinted=false;if(mode==='mole'&&!$('help').checked)hole=Math.floor(Math.random()*9);}$('hint').hidden=!session||!session.active||mode==='free'||$('help').checked;if(mode==='phrase'){data.progress.help=$('help').checked;save();}renderTarget();};
- window.addEventListener('keydown',e=>{
-  if(e.isComposing||e.key==='Process'){if(session&&session.active)$('message').textContent='请先切换到 ABC / 英文输入源。';return;}
-  syncModifiers(e);
-  if(e.target.closest('#difficulty-options'))return;
-  if(!mode||$('settings').open||$('result').open||$('confirm-dialog').open||window.innerWidth<1280||window.innerHeight<700||(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)&&e.target.id!=='help'))return;
-  if(e.metaKey||e.ctrlKey||e.altKey)return;
-  if(mode==='free'&&freeAutoStart&&!e.repeat&&keyEl(e.code))start();
-  if(session&&session.active&&!session.paused&&e.key.length===1)e.preventDefault();
-  if(session&&session.active&&['Tab','Backspace','Enter',' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();
-  const el=keyEl(e.code);if(el){pressedCodes.add(e.code);el.classList.add('pressed');}if(e.repeat||!session||!session.active||session.paused)return;
-  if(mode==='free'){if(el){TSAudio.enable();sound('key');}if(e.key.length===1){lastFreeChar=e.key;$('typed').textContent=textChar(e.key);renderTarget();}return;}
-  if(e.key.length!==1)return;
-  const expected=session.expected,outcome=session.input(e.key,performance.now());if(outcome==='ignored'){if(!session.active)finish();return;}
-  if(outcome==='wrong'){
-   sound('wrong');if(mode==='phrase')flash($('phrase-board').querySelector('.current'),'wrong-feedback');
-   $('message').textContent=caps&&/[a-z]/.test(expected)&&e.key===expected.toUpperCase()?'当前开启了大写锁定，按 Caps Lock 关闭再试试。':'再试一次，目标是 '+textChar(expected)+'。';
+ function start(){if(openDialog()||running()||window.innerWidth<1280||window.innerHeight<700)return;A.stopMusic();A.enable();finished=false;pendingScore=null;session=new C.Session(data.settings.stage,data.settings.help,performance.now());hole=Math.floor(Math.random()*9);renderControls();renderTarget();message('找到字符，把地鼠送回家。');syncMusic();}
+ function pause(){if(!running())return false;if(!session.paused){session.pause(performance.now());A.silence('effect');A.pauseMusic();if(!session.active){finish();return false;}renderControls();message('已暂停，按 Enter 继续。');}return true;}
+ function resume(){if(!running()||!session.paused||openDialog())return;session.resume(performance.now());A.enable();renderControls();message('找到字符，把地鼠送回家。');syncMusic();}
+ function finish(){
+  if(finished||!session||session.active)return;finished=true;A.stopMusic();const record=session.record(globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}`,new Date().toISOString());data.lastResults[C.groupKey(record.stage,record.help)]=record;save();renderControls();renderTarget();
+  message(record.completed?`本局完成，准确率${record.accuracy}%。`:'本局提前结束，未参与排名。');
+  const rank=C.rankFor(data,record);if(record.completed)sound('complete');
+  if(rank){pendingScore=record;$('name-group').textContent=`${L.stages[record.stage].name} · 帮助${record.help?'开启':'关闭'}`;$('name-score').textContent=`${record.score}分 · ${record.accuracy}%准确率 · 第${rank}名`;$('player-name').value=data.lastName;$('name-error').textContent='';$('name-dialog').showModal();$('player-name').focus();$('player-name').select();}
+ }
+ function openPanel(id){if(openDialog())return;if(running()&&!pause())return;if(id==='leaderboard'){boardStage=data.settings.stage;boardHelp=data.settings.help;renderBoard();}else if(id==='settings'){$('import').disabled=running();$('import-note').textContent=running()?'结束本局后可导入备份。':'导入会替换当前数据。';}$(id).showModal();}
+ function closePanel(id){$(id).close();if(id==='leaderboard')$('leaderboard-button').focus();else if(id==='settings')$('settings-button').focus();}
+ function askEnd(){if(!running()||openDialog())return;const wasPaused=session.paused;if(!pause())return;confirmation={kind:'end',original:session,wasPaused};confirmationLostFocus=false;$('confirm-title').textContent='结束本局？';$('confirm-description').textContent='保留本局成绩，不参与排行榜。';$('confirm-ok').textContent='结束';$('confirm-dialog').showModal();$('confirm-cancel').focus();}
+ function resolveConfirmation(accepted){
+  const action=confirmation;if(!action)return;confirmation=null;$('confirm-dialog').close();
+  if(action.kind==='end'){
+   if(accepted){action.original.end(performance.now());finish();}
+   else if(session===action.original&&running()&&!action.wasPaused&&!confirmationLostFocus&&!document.hidden&&document.hasFocus())resume();
+   $('primary-action').focus();
   }else{
-   if(mode==='mole')TSAudio.duckMusic(C.MOLE_TIMING.duration/1000);else sound('correct');$('message').textContent=mode==='mole'?'打中了！+1':'找到了！继续加油。';
-   if(outcome==='complete'){finish();return;}
-   if(mode==='phrase'){session.hinted=false;renderTarget();}
+   if(accepted){data=action.data;session=null;finished=false;pendingScore=null;newRecordId=null;save();applySettings();renderControls();message('备份已导入。');$('import-status').textContent='备份已导入。';}
+   $('settings').showModal();$('import').focus();
   }
+ }
+ function renderBoard(){
+  [...$('board-stages').children].forEach((b,i)=>b.setAttribute('aria-pressed',String(boardStage===i)));document.querySelectorAll('[data-board-help]').forEach(b=>b.setAttribute('aria-pressed',String(boardHelp===(b.dataset.boardHelp==='true'))));
+  const board=data.boards[C.groupKey(boardStage,boardHelp)];$('board-empty').hidden=!!board.length;$('board-rows').replaceChildren();
+  for(let i=0;i<10;i++){const row=document.createElement('tr'),entry=board[i];if(entry?.id===newRecordId)row.className='new-record';const date=entry?new Date(entry.at):null;const values=[i+1,entry?.name||'—',entry?.score??'—',entry?`${entry.accuracy}%`:'—',entry?`${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`:'—'];values.forEach((value,j)=>{const cell=document.createElement('td');if(j===0&&entry&&i<3){const badge=document.createElement('span');badge.className=`rank-medal rank-${i+1}`;badge.textContent=value;cell.append(badge);}else cell.textContent=value;if(j===1&&entry)cell.title=entry.name;row.append(cell);});$('board-rows').append(row);}
+ }
+ function applySettings(){document.body.dataset.size=data.settings.size;for(const id of ['layout','volume','musicVolume','mute','musicEnabled']){if(['mute','musicEnabled'].includes(id))$(id).checked=data.settings[id];else $(id).value=data.settings[id];}for(const id of ['volume','musicVolume'])$(id+'-output').textContent=data.settings[id]+'%';document.querySelectorAll('[data-size]').forEach(b=>{if(b.tagName==='BUTTON')b.setAttribute('aria-pressed',String(b.dataset.size===data.settings.size));});renderKeyboard();syncMusic();}
+ $('primary-action').onclick=()=>{if(!running())start();else if(session.paused)resume();else pause();};$('end').onclick=askEnd;
+ $('help').onchange=()=>{if(running()){$('help').checked=session.help;return;}data.settings.help=$('help').checked;session=null;save();renderControls();renderTarget();message(data.settings.help?'双手放在 F 和 J，眼睛看屏幕。':'试着不看键盘，找到字符。');};
+ $('leaderboard-button').onclick=()=>openPanel('leaderboard');$('settings-button').onclick=()=>openPanel('settings');document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closePanel(b.dataset.close));
+ for(const id of ['leaderboard','settings'])$(id).addEventListener('cancel',e=>{e.preventDefault();closePanel(id);});
+ $('confirm-cancel').onclick=()=>resolveConfirmation(false);$('confirm-ok').onclick=()=>resolveConfirmation(true);$('confirm-dialog').addEventListener('cancel',e=>{e.preventDefault();resolveConfirmation(false);});
+ function skipName(){pendingScore=null;$('name-dialog').close();message('本局完成，成绩未加入排行榜。');$('primary-action').focus();}
+ $('name-skip').onclick=skipName;$('name-dialog').addEventListener('cancel',e=>{e.preventDefault();skipName();});
+ $('name-form').onsubmit=e=>{e.preventDefault();if(!pendingScore)return;try{const rank=C.addScore(data,pendingScore,$('player-name').value);newRecordId=pendingScore.id;pendingScore=null;save();$('name-dialog').close();message(rank?`已保存，第${rank}名。`:'本局完成。');$('primary-action').focus();}catch(error){$('name-error').textContent=error.message;$('player-name').focus();}};
+ document.querySelectorAll('[data-board-help]').forEach(b=>b.onclick=()=>{boardHelp=b.dataset.boardHelp==='true';renderBoard();});
+ function selectTab(tab){document.querySelectorAll('[data-tab]').forEach(b=>{const selected=b.dataset.tab===tab;b.setAttribute('aria-selected',String(selected));b.tabIndex=selected?0:-1;$('settings-'+b.dataset.tab).hidden=!selected;});}
+ const tabs=[...document.querySelectorAll('[data-tab]')];tabs.forEach((b,i)=>{b.onclick=()=>selectTab(b.dataset.tab);b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const next=(i+(e.key==='ArrowRight'?1:2))%3;selectTab(tabs[next].dataset.tab);tabs[next].focus();};});
+ for(const id of ['layout','volume','musicVolume','mute','musicEnabled'])$(id).addEventListener(['volume','musicVolume'].includes(id)?'input':'change',()=>{data.settings[id]=['mute','musicEnabled'].includes(id)?$(id).checked:['volume','musicVolume'].includes(id)?Number($(id).value):$(id).value;save();applySettings();});
+ document.querySelectorAll('button[data-size]').forEach(b=>b.onclick=()=>{data.settings.size=b.dataset.size;save();applySettings();});
+ $('export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='typestory-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ $('import').onclick=()=>{if(!running())$('import-file').click();};$('import-file').onchange=async()=>{const file=$('import-file').files[0];if(!file)return;try{if(file.size>1000000)throw Error('文件过大');const incoming=C.validate(JSON.parse(await file.text()));if(running())throw Error('请先结束本局');if(!$('settings').open)throw Error('请重新打开设置后导入');confirmation={kind:'import',data:incoming};$('settings').close();$('confirm-title').textContent='导入备份？';$('confirm-description').textContent='将替换本机设置、排行榜和上次成绩。建议先导出当前备份。';$('confirm-ok').textContent='导入';$('confirm-dialog').showModal();$('confirm-cancel').focus();}catch(error){$('import-status').textContent='未导入：'+error.message;}$('import-file').value='';};
+ window.addEventListener('keydown',e=>{
+  syncModifiers(e);if(e.isComposing||e.key==='Process'){if(running())message('请切换到 ABC / 英文输入源。');return;}
+  if(openDialog()){if(e.repeat&&['Enter','Escape'].includes(e.key))e.preventDefault();return;}
+  if(window.innerWidth<1280||window.innerHeight<700||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(e.repeat){if(e.key.length===1||['Enter','Escape'].includes(e.key))e.preventDefault();return;}
+  if(e.key==='Escape'){e.preventDefault();if(running()&&!session.paused)pause();return;}
+  if(e.key==='Enter'&&e.shiftKey){e.preventDefault();askEnd();return;}
+  if(e.key==='Enter'){
+   if(e.target.closest('button,input,select')&&e.target.id!=='primary-action')return;
+   e.preventDefault();if(!running())start();else if(session.paused)resume();return;
+  }
+  if(e.target.closest('input,select')||e.target.closest('#stage-options'))return;
+  const el=keyEl(e.code);if(el){pressedCodes.add(e.code);el.classList.add('pressed');}
+  if(!running()||session.paused)return;
+  if(e.key.length!==1)return;e.preventDefault();const outcome=session.input(e.key,performance.now());
+  if(!session.active){finish();return;}if(outcome==='ignored')return;
+  if(outcome==='wrong'){sound('wrong');message(caps&&/[a-z]/.test(session.target)&&e.key===session.target.toUpperCase()?'请关闭大写锁定，再试一次。':'再试一次，地鼠在等你。');}
+  else{A.duckMusic(C.MOLE_TIMING.duration/1000);message('打中了！+1');}
   paintMoleEffect();updateStats();
  });
- window.addEventListener('keyup',e=>{pressedCodes.delete(e.code);syncModifiers(e);const el=keyEl(e.code);if(el)el.classList.remove('pressed');});
- window.addEventListener('blur',()=>{if(pendingConfirmation)confirmationLostFocus=true;pause();clearPressedKeys();});document.addEventListener('visibilitychange',()=>{if(document.hidden){if(pendingConfirmation)confirmationLostFocus=true;pause();clearPressedKeys();}});
- function frame(now){
-  if(session&&session.active&&!session.paused){
-   session.tick(now);
-   if(!session.active)finish();
-   else if(mode==='mole'){for(const cue of session.takeMoleCues())sound(cue);if(session.takeNextMole()){newMole();renderTarget();}}
-   updateStats();
-  }
-  paintMoleEffect();requestAnimationFrame(frame);
- }
- requestAnimationFrame(frame);
- $('settings-button').onclick=()=>{pause();$('saved-progress').textContent=L.phrases.map((p,i)=>{const count=C.stageProgress(data.progress,i);return p.name+'：'+count.completed+'/'+count.total;}).join(' · ');$('settings').showModal();};
- for(const id of ['layout','size','volume','mute','musicEnabled','musicVolume'])$(id).onchange=()=>{data.settings[id]=['mute','musicEnabled'].includes(id)?$(id).checked:['volume','musicVolume'].includes(id)?Number($(id).value):$(id).value;applySettings();save();};
- $('home-settings').onclick=$('settings-button').onclick;
- $('export').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='typestory-progress.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};$('import').onclick=()=>$('import-file').click();$('import-file').onchange=async()=>{const file=$('import-file').files[0];if(!file)return;try{if(file.size>1000000)throw Error('文件过大');const incoming=C.validate(JSON.parse(await file.text()));data=incoming;save();applySettings();if(mode==='phrase')selectMode('phrase');if(mode==='mole'&&!session?.active){$('stage').value=data.settings.moleStage;renderDifficulty();difficultyFeedback();}$('saved-progress').textContent=L.phrases.map((p,i)=>{const count=C.stageProgress(data.progress,i);return p.name+'：'+count.completed+'/'+count.total;}).join(' · ');$('import-status').textContent='进度已导入。';}catch(error){$('import-status').textContent='未导入：'+error.message;}$('import-file').value='';};
-
- let pendingConfirmation=null,confirmationLostFocus=false;
- function askConfirmation(title,description,action){
-  confirmationLostFocus=false;const original=session,wasPaused=!!(session&&session.paused);pause();
-  if(original&&!original.active&&title==='结束练习？')return;
-  pendingConfirmation={action,original,wasPaused};$('confirm-title').textContent=title;$('confirm-description').textContent=description;$('confirm-dialog').showModal();
- }
- function resolveConfirmation(accepted){const pending=pendingConfirmation;if(!pending)return;pendingConfirmation=null;$('confirm-dialog').close();if(accepted)pending.action();else if(session===pending.original&&session&&session.active&&!pending.wasPaused&&!confirmationLostFocus&&!document.hidden&&document.hasFocus()&&!$('settings').open){session.resume(performance.now());syncMusic();$('pause').textContent='暂停';$('message').textContent='继续出发，小手指！';}}
- $('confirm-cancel').onclick=()=>resolveConfirmation(false);$('confirm-ok').onclick=()=>resolveConfirmation(true);$('confirm-dialog').addEventListener('cancel',e=>{e.preventDefault();resolveConfirmation(false);});
- $('end').onclick=()=>askConfirmation('结束练习？',mode==='phrase'?'这条短句尚未完成，结束后下次从本题开头重新练习。':mode==='mole'?'结束后留在当前界面，保留本局成绩，可调整难度再挑战。':'结束后会停止本次练习。',()=>{if(!session)return;session.end(performance.now());if(mode==='free'){stop();$('message').textContent='已结束，可以重新开始探索。';updateStats();renderTarget();}else finish(false,mode!=='mole');});
- function requestReset(stage){askConfirmation(stage===null?'重置全部短句进度？':'重置本阶段进度？','将清除'+(stage===null?'全部短句':'当前阶段')+'的完成记录与最好成绩，无法撤销。键盘、字号和声音设置保留。',()=>{C.resetProgress(data.progress,stage);save();if($('settings').open)$('settings').close();if(mode)selectMode(mode);});}
- $('reset-stage').onclick=()=>requestReset(selectedStage());$('reset-all').onclick=()=>requestReset(null);
- document.querySelectorAll('[data-settings-tab]').forEach(button=>button.onclick=()=>{const tab=button.dataset.settingsTab;$('settings-display').hidden=tab!=='display';$('settings-progress').hidden=tab!=='progress';document.querySelectorAll('[data-settings-tab]').forEach(b=>b.setAttribute('aria-selected',b===button));});
- window.addEventListener('resize',()=>{if(window.innerWidth<1280||window.innerHeight<700)pause();});
- applySettings();
+ window.addEventListener('keyup',e=>{pressedCodes.delete(e.code);syncModifiers(e);keyEl(e.code)?.classList.remove('pressed');});
+ function loseFocus(){if(confirmation)confirmationLostFocus=true;pause();clearPressedKeys();}
+ window.addEventListener('blur',loseFocus);document.addEventListener('visibilitychange',()=>{if(document.hidden)loseFocus();});window.addEventListener('resize',()=>{if(window.innerWidth<1280||window.innerHeight<700)pause();});
+ function frame(now){if(running()&&!session.paused){session.tick(now);if(!session.active)finish();else{for(const cue of session.takeMoleCues())sound(cue);if(session.takeNextMole()){hole=Math.floor(Math.random()*9);renderTarget();}}updateStats();}paintMoleEffect();requestAnimationFrame(frame);}
+ applySettings();renderControls();requestAnimationFrame(frame);
 })();
