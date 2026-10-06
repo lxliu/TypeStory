@@ -63,7 +63,7 @@
   }
   else if(running()){
    const g=K.guidance(session.target),key=keyEl(g.key.code),content=document.createElement('div');key.classList.add('target');content.className='target-content';
-   const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;const finger=document.createElement('span');finger.className='finger-label';finger.textContent=g.label;content.append(letter,makeMole(),finger);key.append(content);
+   const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;content.append(letter,makeMole());key.append(content);
    if(g.shift)for(const code of g.shiftCodes){const el=keyEl(code),label=document.createElement('span');el.classList.add('shift-target');label.className='shift-instruction';label.textContent='按住';el.append(label);}
   }
   paintMoleEffect();
