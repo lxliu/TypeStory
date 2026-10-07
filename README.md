@@ -89,11 +89,20 @@ TypeStory/
 node tests/core.test.js
 node tests/app.test.js
 node tests/audio.test.js
+node tests/resources.test.js
 node --check js/app.js
 node --check js/core.js
 ```
 
 测试覆盖字符范围、计时及命中阶段、八组榜单、排序、备份迁移，以及实际应用脚本在轻量DOM替身中的快捷键、浮层、状态与存储流程。DOM替身不测浏览器排版，模拟音频测试不代替实际听感。
+
+## 发布与资源缓存
+
+当前资源版本为 `20261007-1`。`index.html` 的 `asset-version` 元信息记录版本号，CSS、全部 JS 和页面 SVG 的资源 URL 使用相同的 `?v=20261007-1`；动态图片从元信息读取版本。版本号与本机成绩数据版本独立。
+
+每次修改运行资源并发布时，统一更新元信息及 HTML 中全部资源 URL 的版本号，例如 `20261007-2`。不使用每次打开变化的随机值或时间戳。修改后运行测试检查版本一致及资源路径有效，再发布完整工程。
+
+版本号能区分资源缓存，但不能强制更新已缓存的 HTML。首次部署此修复或看到旧界面时，在 Mac Chrome 按 **⌘⇧R** 强制刷新，并确认 GitHub Pages 部署已完成。资源仍使用相对路径，支持本地离线打开。
 
 ## 验证状态与使用边界
 

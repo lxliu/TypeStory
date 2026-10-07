@@ -78,10 +78,10 @@ for(let position=0;position<3;position++){
  assert.equal(occupied.querySelector('.mole-letter').parentElement.className,'hole-sign');
  assert.equal(occupied.querySelector('.mole-actor').parentElement.className,'hole-burrow');
  const target=occupied.querySelector('.mole-letter').textContent;
- x.key(target==='a'?'s':'a');assert.equal(get('score').textContent,'0');assert.equal(Number(x.document.querySelector('.occupied').dataset.position),position);assert.ok(occupied.querySelector('.mole-body').src.endsWith('mole-hit.svg'));assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='wrong').length,1);
+ x.key(target==='a'?'s':'a');assert.equal(get('score').textContent,'0');assert.equal(Number(x.document.querySelector('.occupied').dataset.position),position);assert.ok(occupied.querySelector('.mole-body').src.split('?')[0].endsWith('mole-hit.svg'));assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='wrong').length,1);
  x.key(target);x.key(target);x.key('!');assert.equal(get('score').textContent,'1');
  x.advance(100);
- const body=occupied.querySelector('.mole-body');assert.ok(body.src.endsWith('mole-hit.svg'));
+ const body=occupied.querySelector('.mole-body');assert.ok(body.src.split('?')[0].endsWith('mole-hit.svg'));
  assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='mole-contact').length,1);
  x.key('Escape');const pose=body.style.transform;x.advance(5000);assert.equal(body.style.transform,pose);
  assert.equal(get('help').disabled,true);assert.equal(get('scene-overlay').hidden,false);
@@ -151,3 +151,14 @@ console.log('PASS: capture shortcuts across control focus, native-action suppres
  x.key('Enter');x.advance(60000);assert.equal(get('overlay-title').textContent,'本局完成');assert.equal(get('overlay-description').textContent,'准确率100%');assert.equal(get('overlay-action').hidden,false);assert.equal(get('scene-overlay').hidden,false);
 }
 console.log('PASS: stage-row help, unobstructed scene mask and one consistent status/action bar in all five states');
+
+// Dynamic pictures follow the HTML release, including the hit-expression swap.
+{
+ const x=boot(),get=x.$,version=x.document.querySelector('meta[name="asset-version"]').getAttribute('content');
+ const checkImages=()=>{for(const img of x.document.querySelectorAll('img'))if(img.src){const [file,query]=img.src.split('?');assert.equal(query,'v='+version);assert.ok(fs.existsSync(path.join(root,file)));}};
+ x.key('Enter');checkImages();x.key(x.document.querySelector('.mole-letter').textContent);x.advance(100);checkImages();
+ assert.equal(x.document.querySelector('.mole-body').src,'assets/images/mole-hit.svg?v='+version);
+ x.key('Escape');get('end').click();get('help').checked=false;get('help').dispatch('change');checkImages();x.key('Enter');checkImages();
+ assert.ok(x.document.querySelector('.mole-hammer').src.endsWith('?v='+version));
+}
+console.log('PASS: dynamic lock, mole, hammer, hole and hit-expression images use the same HTML release');

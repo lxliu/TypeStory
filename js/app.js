@@ -1,6 +1,8 @@
 (() => {
  'use strict';
  const $=id=>document.getElementById(id),C=TSCore,K=TSKeyboard,L=TSLessons,A=TSAudio;
+ const assetVersion=document.querySelector('meta[name="asset-version"]').getAttribute('content');
+ const assetUrl=path=>path+'?v='+encodeURIComponent(assetVersion);
  const HOLE_COUNT=3;
  const storageKey='typestory.v2',pressedCodes=new Set(),reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
  let data=C.defaults(),session=null,finished=false,shift=false,caps=false,hole=0,storageOK=true,pendingScore=null,confirmation=null,boardStage=0,boardHelp=true,newRecordId=null;
@@ -14,7 +16,7 @@
  function renderControls(){
   const locked=running(),state=session?.state||'ready';
   $('help').checked=data.settings.help;$('help').disabled=locked;$('help-state').textContent=data.settings.help?'开启':'关闭';$('help-note').hidden=!locked;
-  [...$('stage-options').children].forEach((button,i)=>{const selected=i===data.settings.stage;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.disabled=locked;button.tabIndex=selected&&!locked?0:-1;const check=button.querySelector('.stage-check');check.replaceChildren();if(selected&&locked){const icon=document.createElement('img');icon.src='assets/images/lock.svg';icon.alt='锁定';const label=document.createElement('span');label.textContent='当前';check.append(icon,label);}else if(selected)check.textContent='✓ 已选择';});
+  [...$('stage-options').children].forEach((button,i)=>{const selected=i===data.settings.stage;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.disabled=locked;button.tabIndex=selected&&!locked?0:-1;const check=button.querySelector('.stage-check');check.replaceChildren();if(selected&&locked){const icon=document.createElement('img');icon.src=assetUrl('assets/images/lock.svg');icon.alt='锁定';const label=document.createElement('span');label.textContent='当前';check.append(icon,label);}else if(selected)check.textContent='✓ 已选择';});
   $('primary-action').hidden=state!=='running';$('primary-action').disabled=state!=='running';renderOverlay(state);
   const last=data.lastResults[C.groupKey(data.settings.stage,data.settings.help)];
   setText('last-result',last?.completed?`上次 ${last.score}分 · 准确率${last.accuracy}%`:'上次：还没练过');
@@ -50,10 +52,10 @@
     const el=document.createElement('div');el.className='hole';el.dataset.position=i;
     const sign=document.createElement('div');sign.className='hole-sign';
     const burrow=document.createElement('div');burrow.className='hole-burrow';
-    const ground=document.createElement('img');ground.className='hole-ground';ground.src='assets/images/hole.svg';ground.alt='';burrow.append(ground);
+    const ground=document.createElement('img');ground.className='hole-ground';ground.src=assetUrl('assets/images/hole.svg');ground.alt='';burrow.append(ground);
     if(running()&&i===hole){
      el.classList.add('occupied');const letter=document.createElement('span');letter.className='mole-letter';letter.textContent=session.target;sign.append(letter);
-     const front=document.createElement('img');front.className='hole-front';front.src='assets/images/hole-front.svg';front.alt='';burrow.append(makeMole(),front);
+     const front=document.createElement('img');front.className='hole-front';front.src=assetUrl('assets/images/hole-front.svg');front.alt='';burrow.append(makeMole(),front);
     }
     el.append(sign,burrow);$('holes').append(el);
    }
@@ -67,8 +69,8 @@
  }
  function makeMole(){
   const actor=document.createElement('div');actor.className='mole-actor';
-  const image=document.createElement('img');image.className='mole-body';image.src='assets/images/mole-bust.svg';image.alt='等待输入的地鼠';
-  const hammer=document.createElement('img');hammer.className='mole-hammer';hammer.src='assets/images/hammer.svg';hammer.alt='';
+  const image=document.createElement('img');image.className='mole-body';image.src=assetUrl('assets/images/mole-bust.svg');image.alt='等待输入的地鼠';
+  const hammer=document.createElement('img');hammer.className='mole-hammer';hammer.src=assetUrl('assets/images/hammer.svg');hammer.alt='';
   const stars=document.createElement('span');stars.className='mole-stars';stars.textContent='✦ ✧';stars.setAttribute('aria-hidden','true');
   const plus=document.createElement('span');plus.className='mole-plus';plus.textContent='+1';plus.setAttribute('aria-hidden','true');
   const mask=document.createElement('div');mask.className='mole-mask';mask.append(image);const rim=document.createElement('div');rim.className='mole-rim';actor.append(mask,rim,hammer,stars,plus);return actor;
@@ -79,7 +81,7 @@
    const body=actor.querySelector('.mole-body'),hammer=actor.querySelector('.mole-hammer'),stars=actor.querySelector('.mole-stars'),plus=actor.querySelector('.mole-plus');
    body.style.transform='none';body.style.opacity='1';hammer.style.opacity='0';stars.style.opacity='0';plus.style.opacity='0';
    const struck=effect&&(effect.kind==='wrong'?age<350:age>=T.contact);
-   const src='assets/images/'+(struck?'mole-hit.svg':'mole-bust.svg');if(body.getAttribute('src')!==src)body.src=src;
+   const src=assetUrl('assets/images/'+(struck?'mole-hit.svg':'mole-bust.svg'));if(body.getAttribute('src')!==src)body.src=src;
    body.alt=struck?'打中了，地鼠正在跑回洞里':'等待输入的地鼠';
    if(!effect||!session.active)continue;
    if(effect.kind==='wrong'){if(age<350&&!reducedMotion.matches)body.style.transform='translateX('+Math.sin(age/350*Math.PI*4)*8+'%) rotate('+Math.sin(age/350*Math.PI*4)*8+'deg)';continue;}
