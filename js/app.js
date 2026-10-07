@@ -14,9 +14,8 @@
  function renderControls(){
   const locked=running(),state=session?.state||'ready';
   $('help').checked=data.settings.help;$('help').disabled=locked;$('help-state').textContent=data.settings.help?'开启':'关闭';$('help-note').hidden=!locked;
-  [...$('stage-options').children].forEach((button,i)=>{const selected=i===data.settings.stage;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.tabIndex=selected?0:-1;button.querySelector('.stage-check').textContent=selected?'✓ 已选择':'';});
-  $('primary-action').style.visibility=state==='running'?'visible':'hidden';$('primary-action').disabled=state!=='running';renderOverlay(state);
-  setText('session-state',{ready:'准备',running:'进行中',paused:'已暂停',ended:'已结束'}[state]);
+  [...$('stage-options').children].forEach((button,i)=>{const selected=i===data.settings.stage;button.setAttribute('aria-checked',String(selected));button.setAttribute('aria-disabled',String(locked));button.disabled=locked;button.tabIndex=selected&&!locked?0:-1;const check=button.querySelector('.stage-check');check.replaceChildren();if(selected&&locked){const icon=document.createElement('img');icon.src='assets/images/lock.svg';icon.alt='锁定';const label=document.createElement('span');label.textContent='当前';check.append(icon,label);}else if(selected)check.textContent='✓ 已选择';});
+  $('primary-action').hidden=state!=='running';$('primary-action').disabled=state!=='running';renderOverlay(state);
   const last=data.lastResults[C.groupKey(data.settings.stage,data.settings.help)];
   setText('last-result',last?.completed?`上次 ${last.score}分 · 准确率${last.accuracy}%`:'上次：还没练过');
   updateStats();
@@ -24,10 +23,9 @@
  function renderOverlay(state){
   const visible=state!=='running',completed=state==='ended'&&session.elapsed===C.DURATION;
   $('scene-overlay').hidden=!visible;$('keyboard-area').inert=visible;$('holes').inert=visible;
-  setText('overlay-title',state==='ready'?'准备开始':state==='paused'?'已暂停':completed?'本局完成':'本局已结束');
-  setText('overlay-label',state==='paused'?'继续':'开始');$('end').hidden=state!=='paused';
-  setText('overlay-description',state==='ready'?'双手放在 F 和 J，眼睛看屏幕。':state==='paused'?'结束后不记录本局成绩':completed?`${session.correct}分 · 准确率${session.accuracy}%`:'本局成绩未记录');
-  setText('overlay-hint',state==='paused'?'Enter 继续':state==='ready'?'Enter 开始 · Esc 暂停':'Enter 开始');
+  setText('overlay-title',state==='running'?'进行中':state==='ready'?'准备开始':state==='paused'?'已暂停':completed?'本局完成':'本局已结束');
+  $('overlay-action').hidden=!visible;setText('overlay-label',state==='paused'?'继续':'开始');$('end').hidden=state!=='paused';$('restart').hidden=state!=='paused';
+  $('overlay-description').hidden=state==='running';setText('overlay-description',state==='running'?'':state==='ready'?'可以先敲键热身':state==='paused'?'重新开始或结束，不记录本局成绩':completed?`准确率${session.accuracy}%`:'本局成绩未记录');
   if(visible&&document.activeElement===$('primary-action'))$('overlay-action').focus();
  }
  function updateStats(){setText('score',session?session.correct:0);setText('time',session?Math.ceil((C.DURATION-session.elapsed)/1000):60);}
@@ -102,11 +100,12 @@
   if(finished||!session||session.active)return;finished=true;A.stopMusic();const record=session.record(globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random()}`,new Date().toISOString());if(record.completed){data.lastResults[C.groupKey(record.stage,record.help)]=record;save();}A.silence('effect');renderControls();renderTarget();
   message(record.completed?`本局完成，准确率${record.accuracy}%。`:'本局已结束，成绩未记录。');
   const rank=C.rankFor(data,record);if(record.completed)sound('complete');
-  if(rank){pendingScore=record;$('name-group').textContent=`${L.stages[record.stage].name} · 帮助${record.help?'开启':'关闭'}`;$('name-score').textContent=`${record.score}分 · ${record.accuracy}%准确率 · 第${rank}名`;$('player-name').value=data.lastName;$('name-error').textContent='';$('name-dialog').showModal();$('player-name').focus();$('player-name').select();}
+  if(rank){clearPressedKeys();pendingScore=record;$('name-group').textContent=`${L.stages[record.stage].name} · 帮助${record.help?'开启':'关闭'}`;$('name-score').textContent=`${record.score}分 · ${record.accuracy}%准确率 · 第${rank}名`;$('player-name').value=data.lastName;$('name-error').textContent='';$('name-dialog').showModal();$('player-name').focus();$('player-name').select();}
  }
- function openPanel(id){if(openDialog())return;if(running()&&!pause())return;if(id==='leaderboard'){boardStage=data.settings.stage;boardHelp=data.settings.help;renderBoard();}else if(id==='settings'){$('import').disabled=running();$('import-note').textContent=running()?'结束本局后可导入备份。':'导入会替换当前数据。';}$(id).showModal();}
+ function openPanel(id){if(openDialog())return;if(running()&&!pause())return;if(id==='leaderboard'){boardStage=data.settings.stage;boardHelp=data.settings.help;renderBoard();}else if(id==='settings'){$('import').disabled=running();$('import-note').textContent=running()?'结束本局后可导入备份。':'导入会替换当前数据。';}clearPressedKeys();A.silence('effect');$(id).showModal();}
  function closePanel(id){$(id).close();if(id==='leaderboard')$('leaderboard-button').focus();else if(id==='settings')$('settings-button').focus();}
  function endPaused(){if(openDialog()||!running()||!session.paused)return;session.end(performance.now());finish();$('overlay-action').focus();}
+ function restartPaused(){if(openDialog()||!running()||!session.paused)return;session.end(performance.now());clearPressedKeys();start();$('primary-action').focus();}
  function resolveConfirmation(accepted){
   const action=confirmation;if(!action)return;confirmation=null;$('confirm-dialog').close();
   if(accepted){data=action.data;session=null;finished=false;pendingScore=null;newRecordId=null;save();applySettings();renderControls();message('备份已导入。');$('import-status').textContent='备份已导入。';}
@@ -118,7 +117,7 @@
   for(let i=0;i<10;i++){const row=document.createElement('tr'),entry=board[i];if(entry?.id===newRecordId)row.className='new-record';const date=entry?new Date(entry.at):null;const values=[i+1,entry?.name||'—',entry?.score??'—',entry?`${entry.accuracy}%`:'—',entry?`${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`:'—'];values.forEach((value,j)=>{const cell=document.createElement('td');if(j===0&&entry&&i<3){const badge=document.createElement('span');badge.className=`rank-medal rank-${i+1}`;badge.textContent=value;cell.append(badge);}else cell.textContent=value;if(j===1&&entry)cell.title=entry.name;row.append(cell);});$('board-rows').append(row);}
  }
  function applySettings(){document.body.dataset.size=data.settings.size;for(const id of ['layout','volume','musicVolume','mute','musicEnabled']){if(['mute','musicEnabled'].includes(id))$(id).checked=data.settings[id];else $(id).value=data.settings[id];}for(const id of ['volume','musicVolume'])$(id+'-output').textContent=data.settings[id]+'%';document.querySelectorAll('[data-size]').forEach(b=>{if(b.tagName==='BUTTON')b.setAttribute('aria-pressed',String(b.dataset.size===data.settings.size));});renderKeyboard();syncMusic();}
- $('primary-action').onclick=()=>{if(running()&&!session.paused)pause();};$('overlay-action').onclick=()=>{if(!running())start();else if(session.paused)resume();};$('end').onclick=endPaused;
+ $('primary-action').onclick=()=>{if(running()&&!session.paused)pause();};$('overlay-action').onclick=()=>{if(!running())start();else if(session.paused)resume();};$('end').onclick=endPaused;$('restart').onclick=restartPaused;
  $('help').onchange=()=>{if(running()){$('help').checked=session.help;return;}data.settings.help=$('help').checked;session=null;save();renderControls();renderTarget();message(data.settings.help?'双手放在 F 和 J，眼睛看屏幕。':'试着不看键盘，找到字符。');};
  $('leaderboard-button').onclick=()=>openPanel('leaderboard');$('settings-button').onclick=()=>openPanel('settings');document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closePanel(b.dataset.close));
  for(const id of ['leaderboard','settings'])$(id).addEventListener('cancel',e=>{e.preventDefault();closePanel(id);});
@@ -137,22 +136,21 @@
   syncModifiers(e);if(e.isComposing||e.key==='Process'){if(running())message('请切换到 ABC / 英文输入源。');return;}
   if(openDialog()){if(e.repeat&&['Enter','Escape'].includes(e.key))e.preventDefault();return;}
   if(window.innerWidth<1280||window.innerHeight<700||e.metaKey||e.ctrlKey||e.altKey)return;
-  if(e.repeat){if(e.key.length===1||['Enter','Escape'].includes(e.key))e.preventDefault();return;}
-  if(e.key==='Escape'){e.preventDefault();if(running()&&!session.paused)pause();return;}
-  if(e.key==='Enter'&&e.shiftKey){e.preventDefault();return;}
+  if(e.repeat){if(e.key.length===1||['Enter','Escape'].includes(e.key))e.preventDefault();if(['Enter','Escape'].includes(e.key))e.stopPropagation();return;}
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(running()&&!session.paused)pause();return;}
+  if(e.key==='Enter'&&e.shiftKey){e.preventDefault();e.stopPropagation();return;}
   if(e.key==='Enter'){
-   if(e.target.closest('button,input,select')&&!['primary-action','overlay-action'].includes(e.target.id))return;
-   e.preventDefault();if(!running())start();else if(session.paused)resume();return;
+   e.preventDefault();e.stopPropagation();if(!running())start();else if(session.paused)resume();return;
   }
-  if(e.target.closest('input,select')||e.target.closest('#stage-options'))return;
+  if(e.target.closest('input,select')&&e.target.id!=='help')return;
   const el=keyEl(e.code);if(el){pressedCodes.add(e.code);el.classList.add('pressed');}
-  if(!running()||session.paused)return;
+  if(!running()||session.paused){if(el){A.enable();sound('key');if(!e.target.closest('button,input,select')&&e.key!=='Tab')e.preventDefault();}return;}
   if(e.key.length!==1)return;e.preventDefault();const outcome=session.input(e.key,performance.now());
   if(!session.active){finish();return;}if(outcome==='ignored')return;
   if(outcome==='wrong'){sound('wrong');message(caps&&/[a-z]/.test(session.target)&&e.key===session.target.toUpperCase()?'请关闭大写锁定，再试一次。':'再试一次，地鼠在等你。');}
   else{A.duckMusic(C.MOLE_TIMING.duration/1000);message('打中了！+1');}
   paintMoleEffect();updateStats();
- });
+ },true);
  window.addEventListener('keyup',e=>{pressedCodes.delete(e.code);syncModifiers(e);keyEl(e.code)?.classList.remove('pressed');});
  function loseFocus(){pause();clearPressedKeys();}
  window.addEventListener('blur',loseFocus);document.addEventListener('visibilitychange',()=>{if(document.hidden)loseFocus();});window.addEventListener('resize',()=>{if(window.innerWidth<1280||window.innerHeight<700)pause();});

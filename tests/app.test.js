@@ -21,15 +21,23 @@ function boot(saved={},failStorage=false,random=Math.random){
   if(token.startsWith('<')){const m=/^<([\w-]+)/.exec(token);if(!m)continue;const el=document.createElement(m[1]);for(const a of token.matchAll(/([\w-]+)(?:="([^"]*)")?/g)){if(a.index<2)continue;el.setAttribute(a[1],a[2]??'');}stack.at(-1).append(el);if(!['meta','link','img','input','br'].includes(m[1]))stack.push(el);
   }else stack.at(-1)._text+=token;
  }
- document.body=document.querySelector('body');const storage=new Map(Object.entries(saved)),events={},audio=[];let now=0,nextFrame;
- const context={document,console,Math:Object.assign(Object.create(Math),{random}),Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:1280,innerHeight:700,matchMedia:()=>({matches:false}),addEventListener:(name,fn)=>events[name]=fn,requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
+ document.body=document.querySelector('body');const storage=new Map(Object.entries(saved)),events={},eventOptions={},audio=[];let now=0,nextFrame;
+ const context={document,console,Math:Object.assign(Object.create(Math),{random}),Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:1280,innerHeight:700,matchMedia:()=>({matches:false}),addEventListener:(name,fn,options)=>{events[name]=fn;eventOptions[name]=options;},requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
  for(const file of ['keyboard','lessons','core','app'])vm.runInContext(fs.readFileSync(path.join(root,'js',file+'.js'),'utf8'),context,{filename:file+'.js'});
  const $=id=>document.getElementById(id);
- const key=(key,extra={})=>events.keydown({key,code:key.length===1?'Key'+key.toUpperCase():key,target:document.body,shiftKey:false,getModifierState:()=>false,preventDefault(){},...extra});
- return {$,document,storage,key,events,audio,advance(t){now=t;nextFrame(t);},keyup(caps,shift=false,code='CapsLock'){events.keyup({code,shiftKey:shift,getModifierState:()=>caps});},data(){return JSON.parse(storage.get('typestory.v2'));}};
+ const key=(key,extra={})=>{
+  const e={key,code:key.length===1?'Key'+key.toUpperCase():key,target:document.activeElement||document.body,shiftKey:false,getModifierState:()=>false,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;},...extra};
+  // Model capture -> target ordering and Enter's native button activation.
+  if(eventOptions.keydown===true)events.keydown(e);
+  if(!e.stopped)e.target.dispatch('keydown',e);
+  if(eventOptions.keydown!==true&&!e.stopped)events.keydown(e);
+  if(key==='Enter'&&!e.prevented&&!e.repeat&&e.target.tagName==='BUTTON')e.target.click();
+  return e;
+ };
+ return {$,document,storage,key,events,eventOptions,audio,advance(t){now=t;nextFrame(t);},keyup(caps,shift=false,code='CapsLock'){events.keyup({code,shiftKey:shift,getModifierState:()=>caps});},data(){return JSON.parse(storage.get('typestory.v2'));}};
 }
 let app=boot(),$=app.$;assert.equal($('stage-options').children.length,4);assert.equal($('overlay-label').textContent,'开始');
-assert.equal($('scene-overlay').hidden,false);assert.equal($('keyboard-area').inert,true);assert.equal($('primary-action').style.visibility,'hidden');
+assert.equal($('scene-overlay').hidden,false);assert.equal($('keyboard-area').inert,true);assert.equal($('primary-action').hidden,true);
 $('stage-options').children[2].click();$('help').checked=false;$('help').dispatch('change');assert.equal(app.data().settings.stage,2);assert.equal(app.data().settings.help,false);
 app.key('Enter');assert.equal($('scene-overlay').hidden,true);assert.equal($('holes').children.length,3);assert.equal(app.document.querySelectorAll('.hole-ground').length,3);assert.equal($('primary-label').textContent,'暂停');assert.equal($('help').disabled,true);$('stage-options').children[0].click();assert.equal(app.data().settings.stage,2);
 app.key('Enter',{repeat:true});assert.equal($('primary-label').textContent,'暂停');app.advance(1000);app.key('Escape');app.advance(5000);assert.equal($('time').textContent,'59');assert.equal($('overlay-label').textContent,'继续');app.key('Enter');assert.equal($('primary-label').textContent,'暂停');
@@ -50,8 +58,8 @@ const old=app.data();old.lastResults['2:0']={...old.lastResults['2:0'],completed
 console.log('PASS: actual app initialization, preferences, locks, shortcuts, dialogs, state overlays, direct end/discard, blur, grouped results, naming once, filters, Caps Lock and storage failure');
 // Additional end-state and import transactions, using real event handlers.
 (async()=>{
- let x=boot(),get=x.$;x.key('Enter');const first=x.document.querySelector('.mole-letter').textContent;x.key(first);x.advance(100);const actor=x.document.querySelector('.mole-actor');assert.ok(actor);x.key('Escape');const frozen=get('time').textContent;x.advance(9000);assert.equal(get('time').textContent,frozen);assert.equal(get('overlay-label').textContent,'继续');x.key('Enter');x.advance(69000);assert.equal(get('name-dialog').open,true);assert.equal(get('scene-overlay').hidden,false);assert.equal(get('overlay-title').textContent,'本局完成');assert.ok(get('overlay-description').textContent.includes('1分'));get('name-skip').click();assert.equal(x.data().boards['0:1'].length,0);assert.equal(x.data().lastResults['0:1'].score,1);
- x=boot();get=x.$;x.key('Enter');x.advance(60000);assert.equal(x.document.querySelector('dialog[open]'),null);assert.equal(x.data().lastResults['0:1'].completed,true);assert.equal(x.data().boards['0:1'].length,0);assert.equal(get('overlay-description').textContent,'0分 · 准确率100%');assert.equal(get('primary-action').style.visibility,'hidden');
+ let x=boot(),get=x.$;x.key('Enter');const first=x.document.querySelector('.mole-letter').textContent;x.key(first);x.advance(100);const actor=x.document.querySelector('.mole-actor');assert.ok(actor);x.key('Escape');const frozen=get('time').textContent;x.advance(9000);assert.equal(get('time').textContent,frozen);assert.equal(get('overlay-label').textContent,'继续');x.key('Enter');x.advance(69000);assert.equal(get('name-dialog').open,true);assert.equal(get('scene-overlay').hidden,false);assert.equal(get('overlay-title').textContent,'本局完成');assert.equal(get('score').textContent,'1');assert.equal(get('overlay-description').textContent,'准确率100%');get('name-skip').click();assert.equal(x.data().boards['0:1'].length,0);assert.equal(x.data().lastResults['0:1'].score,1);
+ x=boot();get=x.$;x.key('Enter');x.advance(60000);assert.equal(x.document.querySelector('dialog[open]'),null);assert.equal(x.data().lastResults['0:1'].completed,true);assert.equal(x.data().boards['0:1'].length,0);assert.equal(get('overlay-description').textContent,'准确率100%');assert.equal(get('primary-action').hidden,true);
  get('settings-button').click();get('import-file').files=[{size:50,text:async()=>'{broken'}];const before=x.storage.get('typestory.v2');await get('import-file').onchange();assert.equal(x.storage.get('typestory.v2'),before);assert.ok(get('import-status').textContent.startsWith('未导入'));
  const incoming=x.data();incoming.settings.stage=3;incoming.settings.help=false;incoming.lastName='Test';get('import-file').files=[{size:500,text:async()=>JSON.stringify(incoming)}];await get('import-file').onchange();assert.equal(get('confirm-dialog').open,true);get('confirm-cancel').click();assert.equal(get('settings').open,true);assert.equal(x.data().settings.stage,0);
  await get('import-file').onchange();get('confirm-ok').click();assert.equal(x.data().settings.stage,3);assert.equal(x.data().settings.help,false);assert.equal(get('settings').open,true);assert.equal(get('help-state').textContent,'关闭');
@@ -91,3 +99,55 @@ for(let position=0;position<3;position++){
  assert.equal(get('holes').children.length,3);assert.equal(x.document.querySelectorAll('.mole-actor').length,1);
 }
 console.log('PASS: all three normal locations, unified scene structure, hit once, frozen animation, retreat, respawn and restart cleanup');
+
+// Shortcuts must win over focused controls, including a stage's target handler.
+for(const focus of ['help','stage','primary-action','restart','end','settings-button','leaderboard-button']){
+ const x=boot(),get=x.$,target=focus==='stage'?get('stage-options').children[2]:get(focus);
+ assert.equal(x.eventOptions.keydown,true);
+ if(focus==='help'){get('help').checked=false;get('help').dispatch('change');}
+ target.focus();let event=x.key('Enter');assert.equal(event.prevented,true);assert.equal(event.stopped,true);
+ assert.equal(get('scene-overlay').hidden,true);assert.equal(x.document.querySelector('dialog[open]'),null);
+ assert.equal(x.data().settings.stage,0);assert.equal(x.data().settings.help,focus!=='help');
+ x.key('Enter');assert.equal(get('scene-overlay').hidden,true); // Does not click a focused button.
+ target.focus();event=x.key('Escape');assert.equal(event.prevented,true);assert.equal(get('overlay-title').textContent,'已暂停');
+ assert.equal(get('restart').hidden,false);assert.ok([...get('stage-options').children].every(b=>b.disabled));
+ assert.equal(get('stage-options').children[0].querySelector('.stage-check').textContent,'当前');
+ assert.equal(get('help').disabled,true);x.key('Enter',{shiftKey:true});assert.equal(get('overlay-title').textContent,'已暂停');
+ target.focus();x.key('Enter');assert.equal(get('scene-overlay').hidden,true);assert.equal(get('score').textContent,'0');
+ x.key('Escape');get('end').click();assert.ok([...get('stage-options').children].every(b=>!b.disabled));
+}
+// Free practice: sounds and highlights never score or resume a paused animation.
+{
+ const x=boot(),get=x.$,keyEl=code=>x.document.querySelector(`[data-code="${code}"]`);
+ for(const [key,code] of [['a','KeyA'],[' ','Space'],['Shift','ShiftLeft'],['CapsLock','CapsLock'],['Backspace','Backspace'],['ArrowLeft','ArrowLeft'],['ArrowUp','ArrowUp'],['ArrowDown','ArrowDown'],['ArrowRight','ArrowRight'],['Tab','Tab']]){
+  const count=x.audio.filter(a=>a[0]==='play'&&a[1]==='key').length;
+  x.key(key,{code});assert.ok(keyEl(code).className.split(' ').includes('pressed'));assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='key').length,count+1);
+  x.key(key,{code,repeat:true});assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='key').length,count+1);
+  x.keyup(false,false,code);assert.ok(!keyEl(code).className.split(' ').includes('pressed'));
+ }
+ x.key('Enter');x.key(x.document.querySelector('.mole-letter').textContent);x.advance(130);x.key('Escape');
+ const before=x.storage.get('typestory.v2'),score=get('score').textContent,time=get('time').textContent,pose=x.document.querySelector('.mole-body').style.transform;
+ x.key('z');x.advance(5000);assert.equal(get('score').textContent,score);assert.equal(get('time').textContent,time);assert.equal(x.document.querySelector('.mole-body').style.transform,pose);assert.equal(x.storage.get('typestory.v2'),before);
+ get('settings-button').click();const count=x.audio.filter(a=>a[0]==='play'&&a[1]==='key').length;x.key('z');assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='key').length,count);
+ assert.equal(x.document.querySelectorAll('.pressed').length,0);get('settings').dispatch('cancel');assert.equal(get('overlay-title').textContent,'已暂停');
+ get('restart').click();assert.equal(get('score').textContent,'0');assert.equal(get('time').textContent,'60');assert.equal(get('scene-overlay').hidden,true);assert.equal(x.storage.get('typestory.v2'),before);assert.equal(x.document.querySelector('.mole-body').style.transform,'none');
+ x.advance(6000);assert.equal(get('time').textContent,'59');assert.equal(x.audio.filter(a=>a[0]==='play'&&a[1]==='mole-bounce').length,0);
+ x.advance(65000);if(get('name-dialog').open)get('name-skip').click();const saved=JSON.stringify(x.data().lastResults);
+ x.key('a');assert.equal(get('overlay-title').textContent,'本局完成');x.key('Enter');x.key('Escape');get('restart').click();assert.equal(JSON.stringify(x.data().lastResults),saved);assert.equal(get('time').textContent,'60');
+}
+console.log('PASS: capture shortcuts across control focus, native-action suppression, disabled controls, idle sounds, frozen scores and restart isolation');
+
+// The scene mask must contain no controls; all states use the same external bar.
+{
+ const x=boot(),get=x.$,bar=x.document.querySelector('.game-bar');
+ assert.ok(get('help').closest('.stages'));assert.equal(get('help').closest('.game-bar'),null);
+ assert.equal(get('scene-overlay').children.length,0);assert.equal(get('scene-overlay').textContent.trim(),'');
+ for(const id of ['overlay-title','overlay-description','score','time','primary-action','overlay-action','restart','end'])assert.equal(get(id).closest('.game-bar'),bar);
+ assert.equal(get('overlay-title').textContent,'准备开始');assert.equal(get('overlay-action').hidden,false);assert.equal(get('primary-action').hidden,true);
+ x.key('Enter');assert.equal(get('overlay-title').textContent,'进行中');assert.equal(get('overlay-description').hidden,true);assert.equal(get('overlay-action').hidden,true);assert.equal(get('primary-action').hidden,false);
+ x.key('Escape');assert.equal(get('overlay-title').textContent,'已暂停');assert.equal(get('overlay-description').hidden,false);assert.equal(get('overlay-action').hidden,false);assert.equal(get('restart').hidden,false);assert.equal(get('end').hidden,false);assert.equal(get('primary-action').hidden,true);
+ get('end').click();assert.equal(get('overlay-title').textContent,'本局已结束');assert.equal(get('restart').hidden,true);assert.equal(get('end').hidden,true);
+ x.key('a');assert.ok(x.document.querySelector('[data-code="KeyA"]').className.split(' ').includes('pressed'));
+ x.key('Enter');x.advance(60000);assert.equal(get('overlay-title').textContent,'本局完成');assert.equal(get('overlay-description').textContent,'准确率100%');assert.equal(get('overlay-action').hidden,false);assert.equal(get('scene-overlay').hidden,false);
+}
+console.log('PASS: stage-row help, unobstructed scene mask and one consistent status/action bar in all five states');

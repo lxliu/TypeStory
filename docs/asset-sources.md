@@ -5,6 +5,7 @@
 - `mole-bust.svg`：原创完整地鼠身体，不含背景及洞口。
 - `mole-hit.svg`：对应的闭眼受击表情。
 - `hammer.svg`：原创卡通小锤。
+- `lock.svg`：本地矢量锁定图标，用于阶段及帮助的禁用状态。
 - `trophy.svg`、`settings.svg`：统一风格的本地奖杯和设置图标。
 - 普通模式洞口使用本地 SVG；帮助模式洞口、星星、“+1”、按键与交互状态由HTML/CSS呈现。身体钻洞由单独遮挡层实现。
 - `mole.svg`、`keyboard-card.svg`、`phrase-card.svg` 是旧版原创素材，当前主界面不引用。
