@@ -39,8 +39,27 @@ function validate(raw){
 }
 function rankFor(data,record){if(!record.completed||!record.score)return 0;const board=data.boards[groupKey(record.stage,record.help)];if(board.some(r=>r.id===record.id))return 0;const index=board.findIndex(r=>compare(record,r)<0),rank=index<0?board.length+1:index+1;return rank<=10?rank:0;}
 function addScore(data,record,name){const rank=rankFor(data,record);if(!rank)return 0;const entry={...record,name:cleanName(name)},key=groupKey(record.stage,record.help);data.boards[key].splice(rank-1,0,entry);data.boards[key]=data.boards[key].slice(0,10);data.lastName=entry.name;return rank;}
+// Physical character keys are tracked separately from visual key highlights.
+class InputGuard{
+ constructor(){this.reset();}
+ reset(){this.down=new Map();this.overlapSince=null;this.invalid=false;}
+ cancel(){for(const entry of this.down.values())entry.candidate=null;}
+ check(now){const wasInvalid=this.invalid;if(this.down.size>=2&&this.overlapSince!==null&&now-this.overlapSince>40)this.invalid=true;return !wasInvalid&&this.invalid;}
+ press(code,candidate,now){
+  this.check(now);if(this.down.has(code))return;
+  this.down.set(code,{candidate,pressedAt:now});
+  if(this.down.size===2)this.overlapSince=now;
+  if(this.down.size>=3)this.invalid=true;
+ }
+ release(code,now){
+  this.check(now);const entry=this.down.get(code),blocked=!!entry&&this.invalid;
+  this.down.delete(code);if(this.down.size<2)this.overlapSince=null;
+  if(!this.down.size)this.invalid=false;
+  return {candidate:blocked?null:entry?.candidate,blocked};
+ }
+}
 class Session{
- constructor(stage,help,now=0){this.stage=stage;this.help=help;this.active=true;this.paused=false;this.elapsed=0;this.since=now;this.correct=0;this.errors=0;this.target='';this.moleEffect=null;this.nextTarget();}
+ constructor(stage,help,now=0){this.stage=stage;this.help=help;this.active=true;this.paused=false;this.elapsed=0;this.since=now;this.correct=0;this.errors=0;this.target='';this.targetRevision=0;this.moleEffect=null;this.nextTarget();}
  get state(){return !this.active?'ended':this.paused?'paused':'running';}
  get accuracy(){return accuracy(this.correct,this.errors);}
  get hitProgress(){return this.moleEffect?.kind==='hit'?Math.min(1,(this.elapsed-this.moleEffect.start)/MOLE_TIMING.duration):0;}
@@ -48,11 +67,11 @@ class Session{
  pause(now){this.tick(now);if(this.active)this.paused=true;}
  resume(now){if(this.active){this.paused=false;this.since=now;}}
  end(now){this.tick(now);this.active=false;this.moleEffect=null;}
- nextTarget(random=Math.random){const pool=[...TSLessons.stages[this.stage].chars].filter(c=>c!==this.target);this.target=pool[Math.floor(random()*pool.length)];}
+ nextTarget(random=Math.random){this.targetRevision++;const pool=[...TSLessons.stages[this.stage].chars].filter(c=>c!==this.target);this.target=pool[Math.floor(random()*pool.length)];}
  input(char,now){this.tick(now);if(!this.active||this.paused||this.moleEffect?.kind==='hit')return 'ignored';if(char!==this.target){this.errors++;this.moleEffect={kind:'wrong',start:this.elapsed};return 'wrong';}this.correct++;this.moleEffect={kind:'hit',start:this.elapsed,cues:[]};return 'correct';}
  takeMoleCues(){if(!this.active||this.paused||this.moleEffect?.kind!=='hit')return [];const effect=this.moleEffect,age=this.elapsed-effect.start;return [['mole-contact',MOLE_TIMING.contact],['mole-bounce',MOLE_TIMING.bounce]].filter(([name,time])=>{if(age<time||effect.cues.includes(name))return false;effect.cues.push(name);return true;}).map(([name])=>name);}
  takeNextMole(){if(!this.active||this.paused||this.moleEffect?.kind!=='hit'||this.hitProgress<1)return false;this.moleEffect=null;this.nextTarget();return true;}
  record(id,at){return {id,at,stage:this.stage,help:this.help,score:this.correct,errors:this.errors,accuracy:this.accuracy,elapsed:this.elapsed,completed:this.elapsed===DURATION};}
 }
-root.TSCore={MOLE_TIMING,DURATION,defaults,validate,groupKey,cleanName,rankFor,addScore,Session};
+root.TSCore={MOLE_TIMING,DURATION,defaults,validate,groupKey,cleanName,rankFor,addScore,InputGuard,Session};
 })(typeof window==='undefined'?globalThis:window);
