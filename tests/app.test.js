@@ -13,7 +13,7 @@ class Element{
  addEventListener(name,fn){(this.handlers[name]??=[]).push(fn);}dispatch(name,event={}){const e={target:this,preventDefault(){this.prevented=true;},stopPropagation(){},...event};this['on'+name]?.(e);for(const fn of this.handlers[name]||[])fn(e);return e;}
  click(){if(!this.disabled)this.dispatch('click');}focus(){this.doc.activeElement=this;}select(){}remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(c=>c!==this);}showModal(){assert.ok(!this.doc.querySelector('dialog[open]'),'no stacked modals');this.open=true;this.shows=(this.shows||0)+1;}close(){this.open=false;}
 }
-function boot(saved={},failStorage=false,random=Math.random){
+function boot(saved={},failStorage=false,random=Math.random,viewport={width:1280,height:700}){
  const document=new Element('document');document.doc=document;document.createElement=tag=>new Element(tag,document);document.getElementById=id=>document.querySelector('#'+id);document.hasFocus=()=>true;document.hidden=false;document.addEventListener=Element.prototype.addEventListener;
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),stack=[document];
  for(const token of html.match(/<[^>]+>|[^<]+/g)){
@@ -22,7 +22,7 @@ function boot(saved={},failStorage=false,random=Math.random){
   }else stack.at(-1)._text+=token;
  }
  document.body=document.querySelector('body');const storage=new Map(Object.entries(saved)),events={},eventOptions={},audio=[];let now=0,nextFrame;
- const context={document,console,Math:Object.assign(Object.create(Math),{random}),Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:1280,innerHeight:700,matchMedia:()=>({matches:false}),addEventListener:(name,fn,options)=>{events[name]=fn;eventOptions[name]=options;},requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
+ const context={document,console,Math:Object.assign(Object.create(Math),{random}),Date,Set,Map,Blob,URL,crypto:{randomUUID:()=>`id-${now}-${Math.random()}`},performance:{now:()=>now},localStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>{if(failStorage)throw Error('blocked');storage.set(k,v);},removeItem:k=>storage.delete(k)},innerWidth:viewport.width,innerHeight:viewport.height,matchMedia:()=>({matches:false}),addEventListener:(name,fn,options)=>{events[name]=fn;eventOptions[name]=options;},requestAnimationFrame:fn=>nextFrame=fn,setTimeout:fn=>fn(),TSAudio:Object.fromEntries(['enable','play','startMusic','pauseMusic','stopMusic','silence','duckMusic'].map(k=>[k,(...args)=>audio.push([k,...args])]))};context.window=context;vm.createContext(context);
  for(const file of ['keyboard','lessons','core','app'])vm.runInContext(fs.readFileSync(path.join(root,'js',file+'.js'),'utf8'),context,{filename:file+'.js'});
  const $=id=>document.getElementById(id);
  const codeFor=key=>key===' '?'Space':context.TSKeyboard.rows.flat().find(k=>k.base===key||k.upper===key)?.code||key;
@@ -35,7 +35,7 @@ function boot(saved={},failStorage=false,random=Math.random){
   if(key==='Enter'&&!e.prevented&&!e.repeat&&e.target.tagName==='BUTTON')e.target.click();
   return e;
  };
- return {$,document,storage,key,codeFor,stages:context.TSLessons.stages,tap(char,extra={}){const e=key(char,extra);events.keyup({...e});},time(t){now=t;},events,eventOptions,audio,advance(t){now=t;nextFrame(t);},keyup(caps,shift=false,code='CapsLock'){events.keyup({code,shiftKey:shift,getModifierState:()=>caps});},data(){return JSON.parse(storage.get('typestory.v2'));}};
+ return {$,document,storage,key,codeFor,stages:context.TSLessons.stages,tap(char,extra={}){const e=key(char,extra);events.keyup({...e});},time(t){now=t;},events,eventOptions,audio,resize(width,height){context.innerWidth=width;context.innerHeight=height;events.resize?.();},advance(t){now=t;nextFrame(t);},keyup(caps,shift=false,code='CapsLock'){events.keyup({code,shiftKey:shift,getModifierState:()=>caps});},data(){return JSON.parse(storage.get('typestory.v2'));}};
 }
 let app=boot(),$=app.$;assert.equal($('stage-options').children.length,4);assert.equal($('overlay-label').textContent,'开始');
 assert.equal($('scene-overlay').hidden,false);assert.equal($('keyboard-area').inert,true);assert.equal($('primary-action').hidden,true);
@@ -250,3 +250,22 @@ console.log('PASS: target revision isolation, Caps/Shift snapshot and system-com
  const x=startWith();x.key('a');x.key('1',{code:'Numpad1'});x.time(41);x.keyup(false,false,'Numpad1');releaseChar(x,'a');assert.equal(x.$('score').textContent,'0');x.advance(60000);assert.equal(x.data().lastResults['0:1'].errors,0);
 }
 console.log('PASS: external numeric keypad input and mixed-keypad overlap guard');
+
+// Viewport size affects layout only, never gameplay eligibility or pause state.
+for(const [width,height] of [[1280,700],[1024,600],[768,600],[390,700],[1280,500],[260,300]]){
+ for(const help of [true,false]){
+  const x=boot({},false,()=>0,{width,height}),get=x.$;
+  assert.equal(get('viewport-warning'),null);
+  get('help').checked=help;get('help').dispatch('change');
+  x.key('a');assert.ok(x.document.querySelector('[data-code="KeyA"]').className.includes('pressed'));x.keyup(false,false,'KeyA');
+  x.key('Enter');assert.equal(get('scene-overlay').hidden,true);assert.equal(get('primary-label').textContent,'暂停');
+  x.key('a');x.resize(200,240);x.keyup(false,false,'KeyA');assert.equal(get('score').textContent,'1');
+  x.advance(1000);assert.equal(get('time').textContent,'59');assert.equal(get('scene-overlay').hidden,true);
+  x.key('Escape');x.advance(5000);assert.equal(get('time').textContent,'59');x.resize(1440,900);assert.equal(get('overlay-title').textContent,'已暂停');
+  x.key('Enter');x.advance(6000);assert.equal(get('time').textContent,'58');
+  get('settings-button').click();assert.equal(get('settings').open,true);assert.equal(get('overlay-title').textContent,'已暂停');
+  x.document.querySelector('[data-close="settings"]').click();x.key('Enter');x.events.blur();assert.equal(get('overlay-title').textContent,'已暂停');
+  x.key('Enter');x.advance(64000);assert.equal(get('overlay-title').textContent,'本局完成');assert.equal(x.data().lastResults['0:'+(help?'1':'0')].score,1);
+ }
+}
+console.log('PASS: unrestricted small-window start/input/scoring, resize without auto-pause, explicit pause/resume, dialogs, blur and completion in both scenes');

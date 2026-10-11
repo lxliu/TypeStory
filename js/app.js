@@ -96,7 +96,7 @@
    else if(age>=T.retreat){const q=Math.min(1,(age-T.retreat)/(T.hidden-T.retreat));body.style.transform='translateY('+(q*115)+'%)';if(age>=T.hidden)body.style.opacity='0';}
   }
  }
- function start(){if(openDialog()||running()||window.innerWidth<1280||window.innerHeight<700)return;inputGuard.cancel();A.stopMusic();A.enable();finished=false;pendingScore=null;session=new C.Session(data.settings.stage,data.settings.help,performance.now());hole=Math.floor(Math.random()*HOLE_COUNT);renderControls();renderTarget();message('找到字符，把地鼠送回家。');syncMusic();}
+ function start(){if(openDialog()||running())return;inputGuard.cancel();A.stopMusic();A.enable();finished=false;pendingScore=null;session=new C.Session(data.settings.stage,data.settings.help,performance.now());hole=Math.floor(Math.random()*HOLE_COUNT);renderControls();renderTarget();message('找到字符，把地鼠送回家。');syncMusic();}
  function pause(){inputGuard.cancel();if(!running())return false;if(!session.paused){session.pause(performance.now());A.silence('effect');A.pauseMusic();if(!session.active){finish();return false;}renderControls();message('已暂停，按 Enter 继续。');}return true;}
  function resume(){if(!running()||!session.paused||openDialog())return;session.resume(performance.now());A.enable();renderControls();message('找到字符，把地鼠送回家。');syncMusic();}
  function finish(){
@@ -145,16 +145,15 @@
  }
  window.addEventListener('keydown',e=>{
   const now=performance.now(),composing=e.isComposing||e.key==='Process',system=e.metaKey||e.ctrlKey||e.altKey;
-  const validViewport=window.innerWidth>=1280&&window.innerHeight>=700;
   const editable=e.target.closest('input,select')&&e.target.id!=='help';
   if(composing||system)inputGuard.cancel();
   if(characterCodes.has(e.code)||e.key.length===1){
-   const eligible=running()&&!session.paused&&session.moleEffect?.kind!=='hit'&&!openDialog()&&validViewport&&!editable&&!composing&&!system&&!e.repeat&&e.key.length===1;
+   const eligible=running()&&!session.paused&&session.moleEffect?.kind!=='hit'&&!openDialog()&&!editable&&!composing&&!system&&!e.repeat&&e.key.length===1;
    inputGuard.press(e.code,eligible?{char:e.key,caps:e.getModifierState('CapsLock'),session,revision:session.targetRevision}:null,now);
   }
   syncModifiers(e);if(composing){if(running())message('请切换到 ABC / 英文输入源。');return;}
   if(openDialog()){if(e.repeat&&['Enter','Escape'].includes(e.key))e.preventDefault();return;}
-  if(!validViewport||system)return;
+  if(system)return;
   if(e.repeat){if(e.key.length===1||['Enter','Escape'].includes(e.key))e.preventDefault();if(['Enter','Escape'].includes(e.key))e.stopPropagation();return;}
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(running()&&!session.paused)pause();return;}
   if(e.key==='Enter'&&e.shiftKey){e.preventDefault();e.stopPropagation();return;}
@@ -176,7 +175,7 @@
  },true);
  function loseFocus(){pause();clearPressedKeys();inputGuard.reset();}
  window.addEventListener('compositionstart',()=>inputGuard.cancel());
- window.addEventListener('blur',loseFocus);document.addEventListener('visibilitychange',()=>{if(document.hidden)loseFocus();});window.addEventListener('resize',()=>{if(window.innerWidth<1280||window.innerHeight<700)pause();});
+ window.addEventListener('blur',loseFocus);document.addEventListener('visibilitychange',()=>{if(document.hidden)loseFocus();});
  function frame(now){if(running()&&!session.paused){if(inputGuard.check(now)&&session.moleEffect?.kind!=='hit')message('请一次按一个字符键');session.tick(now);if(!session.active)finish();else{for(const cue of session.takeMoleCues())sound(cue);if(session.takeNextMole()){hole=Math.floor(Math.random()*HOLE_COUNT);renderTarget();}}updateStats();}paintMoleEffect();requestAnimationFrame(frame);}
  applySettings();renderControls();requestAnimationFrame(frame);
 })();
